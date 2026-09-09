@@ -83,12 +83,15 @@ video removes the dead air and the fumbled takes. You get back:
 - `<name>_trimmed.mp4` — the cut video, ready to use as-is
 - `<name>.xml` — the same cut as separate clips, to import if you'd rather
   adjust the cuts yourself
+- `<name>_audio.wav` — the sound for that timeline. Nothing to open, but it
+  has to stay in the folder
 
 Import the `.xml` in Premiere: `File > Import`. In Resolve:
 `File > Import > Timeline > Import AAF, EDL, XML`.
 
-**Keep the original file where it was** — the timeline points at it, so moving
-it makes the media go offline.
+**Keep all three files in that folder together.** Editors find media by
+searching the folder you import from, so a file that has wandered off shows up
+as Media Offline even when nothing is broken.
 
 ### Add slides with you in the corner
 
@@ -105,10 +108,12 @@ Then just describe where each slide goes, in your own words:
 You never type a timestamp. It finds those phrases in what you actually said and
 places the slides there. You get:
 
-- `<name>_slides.xml` — the timeline to import
+- `<name>.xml` — the timeline to import. There is only ever one, with the
+  cut, the slides and the cutouts all in it
 - `<name>_media/` — the cutout overlays and slide copies it uses
 
-**Keep the `_media` folder next to the `.xml`.** On the timeline you'll find your
+**Keep the whole folder together** — the `.xml`, the `_media` folder, the
+trimmed video and the `.wav`. On the timeline you'll find your
 camera on the bottom track, slides above it, and your circular cutout on top —
 all normal clips you can drag, shorten or delete.
 

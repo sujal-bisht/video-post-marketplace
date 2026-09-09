@@ -58,7 +58,8 @@ of a mistake.
 ## The look, and why it is baked in
 
 Ask for the brand colour before building; the ring uses it. Defaults are a
-circle 22% of frame width, a 6px ring, bottom-right, 48px margin — all
+circle 22% of frame width, a 6px ring, bottom-right, and a margin of 2.5%
+of frame width — all
 adjustable, and all fixed **inside** the overlay file rather than sent through
 the XML.
 
@@ -72,6 +73,18 @@ So: **style is decided once, arrangement stays editable.** Changing the circle's
 size or corner means re-rendering overlays (a couple of minutes). Changing *when
 a slide appears* is just dragging a clip, or editing one cue phrase and
 re-running.
+
+**Sizes and margins are percentages of frame width, never pixels.** A 48px
+margin is 2.5% of a 1920-wide frame but 1.25% of a 3840-wide one, so identical
+numbers gave 4K footage a different look from 1080p. The diameter is also
+clamped to 8-30% of frame width: past that a corner cutout stops reading as one,
+and a run on a real 4K clip came back at 36% of frame width sitting mid-right,
+with 390px margins, while the arguments said 22% and bottom-right.
+
+The renderer then **measures the file it just wrote** — the bounding box of
+the alpha channel — and refuses to hand over an overlay whose circle is not
+the requested size in the requested corner. Parameters describe intent; the
+bounding box is what the user actually sees.
 
 ## Workflow
 
@@ -131,9 +144,12 @@ slide range the cutout is not on screen, so rendering it there would be a
 gigabyte of transparent pixels nobody sees), encodes each slide as a short video
 into the media folder, and writes the timeline.
 
-Options worth knowing: `--diameter-pct`, `--border-px`, `--position`,
-`--margin-px`, `--codec`, and `--handles` (extra seconds of overlay either side
-of each range, so the cutout can be extended in the editor without a re-render).
+Options worth knowing: `--diameter-pct` (clamped to 8-30), `--border-px`,
+`--position`, `--margin-pct`, `--codec`, and `--handles` (extra seconds of
+overlay either side of each range, so the cutout can be extended in the editor
+without a re-render). `--margin-px` overrides the margin in absolute pixels;
+prefer the percentage, since a pixel margin does not survive a change of
+resolution.
 
 `--crop-offset-x` shifts the square crop when the speaker does not sit dead
 centre in frame, so the circle does not clip them. Framing is usually consistent
@@ -159,15 +175,20 @@ Two things land in the output folder:
 
 - `<name>.xml` — the one timeline to import
 - `<name>_media/` — the overlays and slide videos it references
+- `<name>_trimmed.mp4` and `<name>_audio.wav` — the rough cut's own
+  files, still referenced by the timeline's picture and sound
 
 This step **replaces** the rough cut's `<name>.xml` with the merged timeline and
 deletes nothing else, so the folder holds exactly one XML. Two files in a folder
 invite two imports no matter what the instructions say -- telling the user "only
 import this one" did not work in practice, so there is only one to import.
 
-Tell the user: import the `.xml`, and leave the `_media` folder and the camera
-file where they are. An interchange XML holds absolute paths, so moving either
-one opens the timeline with media offline. The overlays are large (roughly a
+Tell the user: import the `.xml` and leave everything else in the folder where
+it is. Editors resolve media by searching the folders they are given rather than
+by trusting the absolute paths in the XML, so every referenced file has to sit
+in the output folder — that is why slides are re-encoded into `_media`
+instead of being referenced where they were exported from, and why the rough
+cut's trimmed video and sidecar wav stay put. The overlays are large (roughly a
 gigabyte per 2–3 minutes of slide time) and can be deleted once the final render
 is done.
 
@@ -190,8 +211,11 @@ no effects to apply.
    the printed near-misses. Never let a `not_found` through unmentioned.
 2. **A repeated phrase is not a timestamp.** "So let's begin" said three times
    identifies nothing. Flagged as ambiguous, not resolved by coin flip.
-3. **Media offline after tidying up.** Absolute paths are why slides are copied
-   next to the XML instead of referenced where they sat.
+3. **Media offline even though the paths are right.** An importer looks for
+   media by searching the folders it is pointed at; the absolute pathurl in the
+   XML is close to decorative. Proven by scripting Resolve with an empty search
+   folder: the import was refused outright. Everything the timeline references
+   therefore lives in the output folder.
 4. **An overlay without alpha is a black box on screen.** Cheap to check, ugly
    to miss, so Step 5 checks it.
 5. **The circle clipping the speaker** when she sits off-centre. `--crop-offset-x`
@@ -209,3 +233,15 @@ no effects to apply.
 8. **Silent media claiming audio.** Overlays and slide videos have no audio
    stream; declaring channels on them sends the importer hunting for essence
    that does not exist.
+9. **A cutout at 36% of frame width in the middle-right,** while the arguments
+   said 22% bottom-right. Two causes, both now designed out: the margin was in
+   fixed pixels, so it meant half as much on a 4K frame, and nothing ever looked
+   at the rendered file. Geometry is percentage-based, clamped to 8-30%, and
+   verified against the alpha bounding box before hand-off. **No parameter is
+   proof of anything until the output has been measured.**
+10. **Accented words splitting into two tokens.** Cue matching tokenised on
+   `a-z`, so "glueckliche" became two tokens at the umlaut. Cue and transcript
+   were mangled identically, so matches still landed — but token counts
+   stopped matching word counts, which quietly distorted the scores and the
+   reported positions. Tokenisation is Unicode-aware now, which matters because
+   this footage is German and accents are the norm, not an edge case.

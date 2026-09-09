@@ -42,7 +42,12 @@ import os
 import re
 import sys
 
-WORD_RE = re.compile(r"[a-z0-9']+")
+# Unicode-aware: an a-z class splits "glueckliche" at the umlaut into two
+# tokens. Both the cue and the transcript get mangled the same way so
+# matching still lands, but token counts then stop matching word counts,
+# which makes scores and reported positions harder to trust. Real footage
+# here is German, so accented letters are the norm, not an edge case.
+WORD_RE = re.compile(r"[^\W_]+", re.UNICODE)
 
 
 def normalise(text):

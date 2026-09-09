@@ -4,11 +4,15 @@ deliverables:
 
   <basename>_trimmed.mp4   - merged, seamless rough cut (universal, drag into
                               any editor as a single clip)
-  <basename>.xml           - FCP7 XML companion timeline referencing the ORIGINAL
-                              file as separate back-to-back clips, for
+  <basename>.xml           - FCP7 XML timeline: the cut as separate clips, for
                               non-destructive re-editing. FCP7 XML because
                               Premiere Pro imports only that format, and Resolve
                               reads it too.
+  <basename>_audio.wav     - the cut audio, referenced by the timeline
+
+Every file the timeline points at lives in this one folder on purpose: editors
+locate media by searching the XML's own directory, not by the absolute paths
+inside it. Anything kept elsewhere imports as offline media.
 
 Captions are NOT produced here. They are a separate concern with its own quality
 rules (line length, reading speed, sentence-aware breaks), handled by the
@@ -156,6 +160,33 @@ def snap_segments_to_frames(segments, fps):
     return snapped
 
 
+def extract_audio(source_video, keep_segments, out_path):
+    """Write the cut audio as its own file next to the timeline.
+
+    Two reasons, both learned from failed imports:
+
+    1. Everything an interchange XML references has to be findable, and Resolve
+       finds media by SEARCHING DIRECTORIES -- it does not use the absolute path
+       in the file. Proved by pointing it at an empty search folder: it refuses
+       the import outright. So every referenced file must sit inside the output
+       folder, which the editor searches because the XML is there.
+    2. Video and audio must not point at the same file, or the importer invents
+       an audio-only view of it and that phantom entry comes in offline.
+
+    WAV rather than a compressed sidecar: it is universally readable, and 30 MB
+    is nothing beside the overlays.
+    """
+    filters, joins = [], []
+    for i, seg in enumerate(keep_segments):
+        filters.append("[0:a]atrim=start=%.6f:end=%.6f,asetpts=PTS-STARTPTS[a%d]"
+                       % (seg["start"], seg["end"], i))
+        joins.append("[a%d]" % i)
+    graph = ";".join(filters) + ";%sconcat=n=%d:v=0:a=1[out]" % ("".join(joins), len(keep_segments))
+    subprocess.run(["ffmpeg", "-y", "-i", source_video, "-filter_complex", graph,
+                    "-map", "[out]", "-c:a", "pcm_s16le", out_path],
+                   check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+
 def render_trimmed_video(source, keep_segments, out_path):
     if not keep_segments:
         raise SystemExit("No footage left after applying cuts -- refusing to render an empty video.")
@@ -271,6 +302,12 @@ def main():
                     help="Path to a cutlist JSON. Pass repeatedly to combine lists, e.g. "
                          "--cutlist cutlist_silence.json --cutlist cutlist_speech.json")
     ap.add_argument("--basename", default=None)
+    ap.add_argument("--reference-original", action="store_true",
+                    help="Point the timeline's clips at the ORIGINAL footage instead of the "
+                         "trimmed file, so a cut can be dragged back out to reveal material "
+                         "that was removed. The cost is that the original lives outside the "
+                         "output folder, so the editor will not find it unless the user adds "
+                         "that folder as a search location on import.")
     ap.add_argument("--keep-intermediates", action="store_true",
                     help="Leave transcripts/cutlists/snippets in the output folder. Off by "
                          "default: the output folder should contain only what the user needs.")
@@ -309,19 +346,18 @@ def main():
     audio_rate = int(audio_stream.get("sample_rate", 48000)) if audio_stream else 48000
 
     render_trimmed_video(args.source_video, keep_segments, trimmed_path)
-    # Frame-exact stacking: doing this in float seconds drifts a frame per clip.
-    clips = contiguous_clips(args.source_video, keep_segments, fps)
 
-    # Audio is taken from the RENDERED cut, not from the original footage.
-    #
-    # Pointing both picture and sound at the same source file makes the importer
-    # invent an audio-only view of that file, and that phantom entry is what came
-    # in as offline media in Resolve while the video linked fine. Two distinct
-    # real files -- original for picture, trimmed cut for sound -- give it nothing
-    # to guess: verified in Resolve, 0 offline and no duplicate pool item. The
-    # trimmed file already contains exactly this edit, so its timeline position
-    # and its in-point are the same number.
-    audio_clips = [Clip(path=trimmed_path, start=c.start, end=c.end, source_in=c.start)
+    # Everything the XML points at lives in this folder, because the editor
+    # locates media by searching the XML's own directory -- not by the absolute
+    # paths in the file. Referencing footage kept elsewhere is what made an
+    # import come up as offline media.
+    audio_path = os.path.join(args.output_dir, "%s_audio.wav" % basename)
+    extract_audio(args.source_video, keep_segments, audio_path)
+
+    video_source = os.path.abspath(args.source_video) if args.reference_original else trimmed_path
+    # Frame-exact stacking: doing this in float seconds drifts a frame per clip.
+    clips = contiguous_clips(video_source, keep_segments, fps)
+    audio_clips = [Clip(path=audio_path, start=c.start, end=c.end, source_in=c.start)
                    for c in clips]
 
     xml = build_fcp7_xml(
@@ -335,9 +371,9 @@ def main():
         f.write(xml)
     report_summary(merged_cuts, duration, keep_segments)
 
-    deliverables = {os.path.basename(x) for x in (trimmed_path, xml_path)}
+    deliverables = {os.path.basename(x) for x in (trimmed_path, xml_path, audio_path)}
     print(f"\nDelivered to {args.output_dir}:")
-    for x in (trimmed_path, xml_path):
+    for x in (trimmed_path, xml_path, audio_path):
         print(f"  {os.path.basename(x)}")
 
     if not args.keep_intermediates:

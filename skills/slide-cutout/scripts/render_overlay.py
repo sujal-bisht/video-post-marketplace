@@ -27,10 +27,10 @@ smoothest to scrub in an editor -- which is what these files are for.
 Usage:
     python render_overlay.py <camera_video> <output.mov>
         [--start 12.5 --end 48.0]      portion of the camera to use
-        [--diameter-pct 22]            outer circle width as % of frame width
+        [--diameter-pct 22]            outer circle width as % of frame width (8-30)
         [--border-px 6] [--border-color "#FFFFFF"]
         [--position bottom-right|bottom-left|top-right|top-left]
-        [--margin-px 48] [--crop-offset-x 0]
+        [--margin-pct 2.5] [--crop-offset-x 0]
         [--codec prores4444|qtrle|png]
 """
 import argparse
@@ -74,6 +74,36 @@ def parse_color(text):
             "colour must be a 6-digit hex like #1E90FF (got %r)" % text)
     h = m.group(1)
     return int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)
+
+
+DIAMETER_MIN_PCT, DIAMETER_MAX_PCT = 8.0, 30.0
+
+
+def resolve_geometry(frame_w, frame_h, diameter_pct, margin_pct, position):
+    """Work out the circle's size and corner, in pixels, from percentages.
+
+    Percentages, not pixels, because a fixed pixel margin does not mean the same
+    thing at two resolutions: 48px is 2.5% of a 1920-wide frame but only 1.25% of
+    a 3840-wide one, so the same numbers produced a different-looking result on
+    4K footage. Everything here scales with the frame.
+
+    The diameter is clamped: a cutout is a corner element, and a run once came
+    back at 36% of frame width sitting mid-right, which is not the look anyone
+    asked for. Clamping makes that shape impossible rather than merely unlikely.
+    """
+    pct = min(max(diameter_pct, DIAMETER_MIN_PCT), DIAMETER_MAX_PCT)
+    clamped = pct != diameter_pct
+    outer = int(round(frame_w * pct / 100.0))
+    if outer % 2:
+        outer += 1
+    margin = int(round(frame_w * margin_pct / 100.0))
+
+    # The circle plus its margin must fit; shrink the margin before the circle.
+    if outer + 2 * margin > min(frame_w, frame_h):
+        margin = max(0, (min(frame_w, frame_h) - outer) // 2)
+
+    x, y = corner_xy(position, frame_w, frame_h, outer, margin)
+    return outer, margin, x, y, clamped
 
 
 def corner_xy(position, frame_w, frame_h, size, margin):
@@ -126,6 +156,57 @@ def build_filter(frame_w, frame_h, outer, border, colour, pos_x, pos_y, crop_off
              fw=frame_w, fh=frame_h, px=pos_x, py=pos_y)
 
 
+def measure_opaque_box(path):
+    """Bounding box of the non-transparent pixels in a rendered overlay.
+
+    The renderer once produced a circle at 36% of frame width with 390px margins
+    while the parameters said 22% and 48px, and nothing noticed because nothing
+    looked at the file. Measuring the result closes that gap: the alpha channel
+    is extracted, scaled down for speed, and the opaque region's box read back.
+    Returns (x0, y0, x1, y1) in full-resolution pixels, or None.
+    """
+    import tempfile
+    scale = 10
+    with tempfile.TemporaryDirectory() as tmp:
+        pgm = os.path.join(tmp, "a.pgm")
+        r = subprocess.run(["ffmpeg", "-y", "-i", path,
+                            "-vf", "alphaextract,scale=iw/%d:ih/%d" % (scale, scale),
+                            "-frames:v", "1", "-update", "1", "-pix_fmt", "gray", pgm],
+                           capture_output=True, text=True, encoding="utf-8", errors="replace")
+        if r.returncode != 0 or not os.path.isfile(pgm):
+            return None
+        data = open(pgm, "rb").read()
+
+    fields, i = [], 0
+    while len(fields) < 4:
+        while data[i:i + 1].isspace():
+            i += 1
+        if data[i:i + 1] == b"#":
+            NEWLINE = bytes([10])
+            while data[i:i + 1] != NEWLINE:
+                i += 1
+            continue
+        j = i
+        while not data[j:j + 1].isspace():
+            j += 1
+        fields.append(data[i:j])
+        i = j
+    i += 1
+    w, h = int(fields[1]), int(fields[2])
+    px = data[i:i + w * h]
+
+    xs, ys = [], []
+    for y in range(h):
+        row = px[y * w:(y + 1) * w]
+        hit = [x for x, v in enumerate(row) if v > 128]
+        if hit:
+            ys.append(y)
+            xs.extend((hit[0], hit[-1]))
+    if not xs:
+        return None
+    return min(xs) * scale, min(ys) * scale, max(xs) * scale, max(ys) * scale
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("camera_video")
@@ -140,7 +221,13 @@ def main():
                     help="Ring colour, 6-digit hex. Set this to the brand colour.")
     ap.add_argument("--position", default="bottom-right",
                     choices=["bottom-right", "bottom-left", "top-right", "top-left"])
-    ap.add_argument("--margin-px", type=int, default=48)
+    ap.add_argument("--margin-pct", type=float, default=2.5,
+                    help="Gap from the frame edge, as a percentage of frame width. A percentage "
+                         "rather than pixels so the look is identical at 1080p and 4K -- a fixed "
+                         "48px margin is 2.5%% of a 1920 frame but 1.25%% of a 3840 one.")
+    ap.add_argument("--margin-px", type=int, default=None,
+                    help="Override the margin in absolute pixels. Prefer --margin-pct; this "
+                         "exists for one-off tweaks and does not scale with resolution.")
     ap.add_argument("--crop-offset-x", type=int, default=0,
                     help="Shift the square crop horizontally, in source pixels. Use this when "
                          "the speaker does not sit dead centre, so the circle does not clip "
@@ -154,10 +241,15 @@ def main():
     args = ap.parse_args()
 
     frame_w, frame_h, duration = probe(args.camera_video)
-    outer = int(round(frame_w * args.diameter_pct / 100.0))
-    if outer % 2:
-        outer += 1  # even dimensions keep the encoder and the centre maths happy
-    pos_x, pos_y = corner_xy(args.position, frame_w, frame_h, outer, args.margin_px)
+    margin_pct = args.margin_pct
+    if args.margin_px is not None:
+        margin_pct = 100.0 * args.margin_px / frame_w
+    outer, margin, pos_x, pos_y, clamped = resolve_geometry(
+        frame_w, frame_h, args.diameter_pct, margin_pct, args.position)
+    if clamped:
+        print("note: diameter clamped into %g-%g%% of frame width; a corner cutout larger "
+              "than that stops reading as a corner cutout."
+              % (DIAMETER_MIN_PCT, DIAMETER_MAX_PCT), file=sys.stderr)
 
     vf = build_filter(frame_w, frame_h, outer, args.border_px, args.border_color,
                       pos_x, pos_y, args.crop_offset_x)
@@ -181,9 +273,29 @@ def main():
         sys.stderr.write(result.stderr[-2000:])
         raise SystemExit("Overlay render failed.")
 
+    # Check the file rather than trusting the parameters. A render once came out
+    # at 36% of frame width in the middle-right while the arguments said 22% at
+    # the bottom-right, and nothing caught it because nothing looked.
+    box = measure_opaque_box(args.output_mov)
+    if box is None:
+        raise SystemExit("Rendered overlay has no opaque pixels -- the mask did not work.")
+    x0, y0, x1, y1 = box
+    got_d = max(x1 - x0, y1 - y0)
+    tol = max(0.02 * frame_w, 24)
+    problems = []
+    if abs(got_d - outer) > tol:
+        problems.append("diameter %dpx, expected %dpx" % (got_d, outer))
+    if abs(x0 - pos_x) > tol or abs(y0 - pos_y) > tol:
+        problems.append("top-left at (%d,%d), expected (%d,%d)" % (x0, y0, pos_x, pos_y))
+    if problems:
+        raise SystemExit("Overlay geometry is wrong: %s. Refusing to hand over a cutout that "
+                         "does not match the requested look." % "; ".join(problems))
+
     if not args.quiet:
         size_mb = os.path.getsize(args.output_mov) / 1e6
         print("Wrote %s (%.1f MB)" % (args.output_mov, size_mb))
+        print("  verified: %dpx circle (%.1f%% of width) at (%d,%d), margin %dpx"
+              % (got_d, 100.0 * got_d / frame_w, x0, y0, margin))
 
 
 if __name__ == "__main__":

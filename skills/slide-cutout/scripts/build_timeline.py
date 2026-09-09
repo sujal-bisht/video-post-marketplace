@@ -179,11 +179,13 @@ def render_overlays(camera, slides, media_dir, info, args):
         end = min(info["duration"], slide["end"] + args.handles)
         out_path = os.path.join(media_dir, "overlay_%02d.mov" % i)
 
-        outer = int(round(info["width"] * args.diameter_pct / 100.0))
-        if outer % 2:
-            outer += 1
-        pos_x, pos_y = ovl.corner_xy(args.position, info["width"], info["height"],
-                                     outer, args.margin_px)
+        # One geometry helper for both scripts, so the cutout cannot come out one
+        # size here and another there.
+        margin_pct = args.margin_pct
+        if args.margin_px is not None:
+            margin_pct = 100.0 * args.margin_px / info["width"]
+        outer, _margin, pos_x, pos_y, _clamped = ovl.resolve_geometry(
+            info["width"], info["height"], args.diameter_pct, margin_pct, args.position)
         vf = ovl.build_filter(info["width"], info["height"], outer, args.border_px,
                               args.border_color, pos_x, pos_y, args.crop_offset_x)
 
@@ -196,6 +198,18 @@ def render_overlays(camera, slides, media_dir, info, args):
         if result.returncode != 0:
             sys.stderr.write(result.stderr[-1500:])
             raise SystemExit("Overlay render failed for slide %d." % i)
+
+        box = ovl.measure_opaque_box(out_path)
+        if box is None:
+            raise SystemExit("Overlay %d has no opaque pixels -- the mask did not work." % i)
+        x0, y0, x1, y1 = box
+        got = max(x1 - x0, y1 - y0)
+        tol = max(0.02 * info["width"], 24)
+        if abs(got - outer) > tol or abs(x0 - pos_x) > tol or abs(y0 - pos_y) > tol:
+            raise SystemExit(
+                "Overlay %d geometry is wrong: %dpx circle at (%d,%d), expected %dpx at "
+                "(%d,%d). Refusing to hand over a cutout that does not match the requested "
+                "look." % (i, got, x0, y0, outer, pos_x, pos_y))
 
         overlays.append({"path": out_path, "start": start, "end": end})
     return overlays
@@ -213,7 +227,11 @@ def main():
                     help="Ring colour as 6-digit hex; set it to the brand colour.")
     ap.add_argument("--position", default="bottom-right",
                     choices=["bottom-right", "bottom-left", "top-right", "top-left"])
-    ap.add_argument("--margin-px", type=int, default=48)
+    ap.add_argument("--margin-pct", type=float, default=2.5,
+                    help="Gap from the frame edge as a percentage of frame width, so the look "
+                         "is the same at 1080p and 4K.")
+    ap.add_argument("--margin-px", type=int, default=None,
+                    help="Absolute-pixel override for the margin. Prefer --margin-pct.")
     ap.add_argument("--crop-offset-x", type=int, default=0)
     ap.add_argument("--codec", default="prores4444", choices=sorted(ovl.CODECS))
     ap.add_argument("--rough-cut-xml", default=None,
@@ -253,7 +271,7 @@ def main():
     # timeline and the cut stays adjustable.
     if args.rough_cut_xml:
         camera_clips = camera_clips_from_rough_cut(args.rough_cut_xml)
-        print("V1 from rough cut: %d clip(s) referencing the original footage"
+        print("V1 from rough cut: %d clip(s), still individually adjustable"
               % len(camera_clips))
     else:
         camera_clips = [Clip(path=os.path.abspath(args.camera_video), start=0.0,
@@ -269,8 +287,16 @@ def main():
     # picture and sound at one file makes the importer invent an audio-only view
     # of it, and that phantom is what imported as offline media. Two distinct
     # real files give it nothing to guess.
-    audio_clips = [Clip(path=os.path.abspath(args.camera_video), start=c.start,
-                        end=c.end, source_in=c.start) for c in camera_clips]
+    # The rough cut already wrote the cut audio as its own file next to the
+    # timeline. Reuse it: it is inside the output folder, which is where the
+    # editor searches, and it keeps video and audio pointing at different files.
+    audio_source = os.path.join(out_dir, "%s_audio.wav" % basename)
+    if not os.path.isfile(audio_source):
+        audio_source = os.path.abspath(args.camera_video)
+        print("note: %s_audio.wav not found; falling back to the trimmed video for audio"
+              % basename)
+    audio_clips = [Clip(path=audio_source, start=c.start, end=c.end, source_in=c.start)
+                   for c in camera_clips]
 
     xml = build_fcp7_xml(
         sequence_name="%s_slides" % basename,
@@ -303,7 +329,8 @@ def main():
     print("  %s" % os.path.basename(xml_path))
     print("  %s/  (%d overlay(s) + %d slide video(s), %.0f MB)"
           % (os.path.basename(media_dir), len(overlays), len(slide_clips), total_overlay_mb))
-    print("\nImport the .xml; keep the _media folder and the camera file where they are.")
+    print("\nImport the .xml; keep every other file in the folder where it is --")
+    print("editors find media by searching that folder, not by the paths in the XML.")
 
 
 if __name__ == "__main__":

@@ -215,12 +215,30 @@ input):
 
 - `<name>_trimmed.mp4` -- the merged rough cut. The primary deliverable; works
   in any editor as a single clip.
-- `<name>.xml` -- FCP7 XML companion timeline referencing the *original* footage as
-  separate back-to-back clips, for non-destructive re-editing in Premiere or
-  DaVinci Resolve. It is FCP7 XML (XMEML), not FCPXML: Premiere Pro imports only
-  the older format, and Resolve reads it too, so one file serves both editors.
-  CapCut cannot import either; skip mentioning it for CapCut-only users. The
-  original file must stay put or the editor shows media offline.
+- `<name>.xml` -- FCP7 XML companion timeline: the same edit as separate
+  back-to-back clips, for non-destructive re-editing in Premiere or DaVinci
+  Resolve. FCP7 XML (XMEML), not FCPXML -- Premiere Pro imports only the older
+  format and Resolve reads it too, so one file serves both editors. CapCut
+  cannot import either; skip mentioning it for CapCut-only users.
+- `<name>_audio.wav` -- the cut audio, referenced by the timeline's audio
+  tracks. Not a file the user opens, but it has to sit there or sound imports
+  offline.
+
+**Every file the XML references must live in the output folder.** Editors
+resolve media by *searching the folders they are given*, not by trusting the
+absolute path written in the XML -- so a timeline pointing at footage that sits
+somewhere else imports as Media Offline even though the path is perfectly
+correct. Proven by driving Resolve's importer with an empty search folder: the
+import was refused outright, absolute paths and all. That is why V1 references
+the trimmed file and the audio comes from the sidecar wav, and why the output
+folder is self-contained by default.
+
+`--reference-original` points V1 at the original footage instead, which lets a
+cut be dragged back open to reveal material that was removed. The trade is that
+the original lives outside the output folder, so the user must add its folder as
+a search location when importing or the picture shows offline. Do not pass it
+unless the user asks for that specific ability, and if you do, say that out loud
+when handing over.
 
 Captions are not produced here -- the `captions` skill handles them, reading
 this trimmed output. It applies proper cue segmentation (line length, reading
@@ -228,7 +246,7 @@ speed, sentence-aware breaks) that a by-product SRT from this script did not,
 and keeping it separate avoids leaving two competing caption files in the folder.
 
 Originals are never modified, and nothing else is left behind: on exit the
-output folder holds exactly these two files per video and nothing more.
+output folder holds exactly these three files per video and nothing more.
 The run summary (runtime before/after and what was removed) is printed to the
 console rather than written to a file -- the user asked for an output folder
 containing only files they load into an editor, so relay those numbers in your
@@ -327,10 +345,21 @@ written.
 
 10. **Audio offline while video links.** Pointing picture and sound at the same
    source file makes the importer invent an audio-only view of it, and that
-   phantom imports as offline media. The XML's audio clips therefore reference
-   the rendered trimmed file (which already contains exactly this edit) while
-   the video clips reference the original footage. Verified by driving Resolve's
-   scripting API: 0 offline items, one media-pool entry per real file.
+   phantom imports as offline media. Audio therefore comes from its own file,
+   `<name>_audio.wav`, holding exactly this edit. Verified by driving Resolve's
+   scripting API: 0 offline items, one media-pool entry per real file. A file
+   also has to declare depth and sample rate, not just a channel count -- and
+   dropping the audio section entirely was tested too, and imports the audio
+   tracks empty.
+
+11. **Media offline on a real user's machine, with correct paths.** A 4K test
+   imported as "2 of 2 clips were not yet found" because the source video sat in
+   `Downloads` while the XML sat in `Downloads/trimmed_output/`. The absolute
+   pathurl was right; the importer never used it. An earlier "0 offline" result
+   had been meaningless, because the footage happened to sit in the same folder
+   the importer was searching -- the test could not have failed. **Whenever you
+   claim media links, the proof has to be an import whose search folder contains
+   only the output folder.**
 
 The pattern connecting all of them: the pipeline reported what it *meant* to do
 instead of what it *did*, and trusted the transcript as though it were the
