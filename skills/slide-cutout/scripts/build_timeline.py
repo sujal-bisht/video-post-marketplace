@@ -5,24 +5,32 @@ write an FCP7 XML the editor can open and rearrange.
 WHAT LANDS ON THE TIMELINE
 --------------------------
     V3   circular cutout overlays   (transparent everywhere but the circle)
-    V2   slide stills               (one clip per slide, at its own range)
-    V1   the camera, full frame     (spans the whole video)
-    A1   the camera audio           (spans the whole video)
+    V2   slides                     (one clip per slide, at its own range)
+    V1   the rough cut's own clips  (individual, still adjustable)
+    A1/A2  the camera audio, one track per channel, linked to V1
+
+ONE TIMELINE, NOT TWO
+---------------------
+V1 comes from the rough cut's XML, not from the flattened trimmed video. That
+matters: importing the rough-cut XML and a separate slides XML produced two
+unrelated timelines -- one with the adjustable cut, one with a merged copy of it
+plus the overlays -- which is useless, because the reason to keep the cut as
+clips is to be able to nudge them, and the reason to have overlays is for them
+to sit above that. Pass --rough-cut-xml and everything shares one sequence.
 
 Stacked that way, the speaker is full frame wherever no slide covers her, and
 during a slide range the slide hides the camera while the cutout sits on top.
-Nothing needs an effect applied, and every piece is an ordinary clip: the editor
-can drag a slide's edge to change when it appears, delete one, swap one out, or
-shorten the cutout. Only the circle's geometry is fixed, because that cannot
-travel through this format.
+Nothing needs an effect applied, and every piece is an ordinary clip. Only the
+circle's geometry is fixed, because that cannot travel through this format.
 
-MEDIA IS COPIED, NOT LINKED
----------------------------
-Slide images are copied next to the XML rather than referenced where they
-happened to live. An interchange XML holds absolute paths, so a timeline that
-points at a folder the user later tidies up opens with media offline. Keeping
-the media beside the XML makes the handoff self-contained -- except for the
-camera file itself, which is far too large to duplicate and has to stay put.
+MEDIA LIVES BESIDE THE XML
+--------------------------
+Slides are encoded as short videos into the media folder rather than referenced
+as still images -- a still reference imported as offline media in Resolve while
+the movie beside it linked fine, and a static frame encodes to a few hundred KB,
+so the trade is nearly free. An interchange XML holds absolute paths, so keeping
+the media next to the XML makes the handoff self-contained -- except the camera
+file itself, far too large to duplicate, which has to stay put.
 
 Usage:
     python build_timeline.py <camera_video> <resolved_slides.json> <output_dir>
@@ -30,6 +38,7 @@ Usage:
         [--diameter-pct 22] [--border-px 6] [--border-color "#1E90FF"]
         [--position bottom-right] [--margin-px 48] [--crop-offset-x 0]
         [--codec prores4444] [--handles 0.0]
+        [--rough-cut-xml lesson.xml]   put the slides on the SAME timeline as the cut
 """
 import argparse
 import json
@@ -39,6 +48,9 @@ import subprocess
 import sys
 from fractions import Fraction
 from pathlib import Path
+
+import xml.etree.ElementTree as ET
+from urllib.parse import unquote, urlparse
 
 import render_overlay as ovl
 
@@ -57,6 +69,77 @@ except ImportError as exc:  # pragma: no cover
         "plugin, or repackage this skill with tools/build_skills.py." % exc)
 
 
+def _path_from_pathurl(pathurl):
+    p = unquote(urlparse(pathurl).path)
+    if len(p) > 2 and p[0] == "/" and p[2] == ":":
+        p = p[1:]
+    return p
+
+
+def camera_clips_from_rough_cut(xml_path):
+    """Read V1 out of a rough-cut timeline so the slides can sit on top of the
+    actual cut rather than on top of a flattened copy of it.
+
+    Importing two XMLs gave two separate timelines -- one with the adjustable
+    cut, one with the merged video plus overlays -- which is not usable: the
+    whole point of the cut timeline is that its clips can still be nudged, and
+    the whole point of the overlays is that they sit above that. Reading the
+    rough cut's clips here puts everything in one sequence.
+    """
+    root = ET.parse(xml_path).getroot()
+    seq = root.find("sequence")
+    timebase = int(seq.findtext("rate/timebase"))
+    files = {f.get("id"): _path_from_pathurl(f.findtext("pathurl"))
+             for f in seq.findall(".//file") if f.findtext("pathurl")}
+
+    track = seq.find("./media/video/track")
+    if track is None:
+        raise SystemExit("No video track found in %s" % xml_path)
+
+    clips = []
+    for c in track.findall("clipitem"):
+        ref = c.find("file")
+        path = files.get(ref.get("id")) if ref is not None else None
+        if not path:
+            raise SystemExit("A clip in %s references an unknown file id" % xml_path)
+        clips.append(Clip(
+            path=path,
+            start=int(c.findtext("start")) / timebase,
+            end=int(c.findtext("end")) / timebase,
+            source_in=int(c.findtext("in")) / timebase,
+            name=c.findtext("name"),
+        ))
+    if not clips:
+        raise SystemExit("No clips found on V1 of %s" % xml_path)
+    return clips
+
+
+def render_slide_videos(slides, media_dir, info):
+    """Encode each slide as a short video rather than referencing the PNG.
+
+    A still-image reference is the one thing in this format an importer handled
+    badly in practice -- the PNG came up as offline media in Resolve while the
+    movie beside it linked fine. A static frame encodes to a few hundred KB for
+    a couple of minutes, so trading the still for a movie costs almost nothing
+    and removes a whole class of importer quirk.
+    """
+    out = []
+    for i, slide in enumerate(slides, 1):
+        duration = slide["end"] - slide["start"]
+        dest = os.path.join(media_dir, "slide_%02d.mp4" % i)
+        cmd = ["ffmpeg", "-y", "-loop", "1", "-i", slide["image"],
+               "-t", "%.3f" % duration, "-r", str(int(round(float(info["fps"])))),
+               "-c:v", "libx264", "-crf", "18", "-pix_fmt", "yuv420p",
+               "-vf", "scale=%d:%d" % (info["width"], info["height"]), dest]
+        result = subprocess.run(cmd, capture_output=True, text=True,
+                                encoding="utf-8", errors="replace")
+        if result.returncode != 0:
+            sys.stderr.write(result.stderr[-1500:])
+            raise SystemExit("Could not encode slide %d." % i)
+        out.append(dest)
+    return out
+
+
 def probe_video(path):
     out = subprocess.check_output([
         "ffprobe", "-v", "error", "-print_format", "json",
@@ -70,6 +153,7 @@ def probe_video(path):
         "fps": Fraction(int(num), int(den)),
         "duration": float(data["format"]["duration"]),
         "channels": int(a["channels"]) if a else 2,
+        "sample_rate": int(a.get("sample_rate", 48000)) if a else 48000,
     }
 
 
@@ -132,6 +216,11 @@ def main():
     ap.add_argument("--margin-px", type=int, default=48)
     ap.add_argument("--crop-offset-x", type=int, default=0)
     ap.add_argument("--codec", default="prores4444", choices=sorted(ovl.CODECS))
+    ap.add_argument("--rough-cut-xml", default=None,
+                    help="The rough cut's .xml. Its clips become V1, so the slides and "
+                         "cutouts land in the SAME timeline as the adjustable cut instead of "
+                         "a second one. Strongly recommended: without it V1 is the flattened "
+                         "trimmed video and the cut can no longer be altered.")
     ap.add_argument("--handles", type=float, default=0.0,
                     help="Extra seconds of overlay rendered either side of each slide range, "
                          "so the cutout can be extended in the editor without re-rendering.")
@@ -152,30 +241,37 @@ def main():
     print("Rendering %d cutout overlay(s):" % len(slides))
     overlays = render_overlays(args.camera_video, slides, media_dir, info, args)
 
-    # Copy the slide images in so the timeline does not depend on wherever they
-    # were sitting when it was built.
-    slide_clips = []
-    for i, slide in enumerate(slides, 1):
-        src = slide["image"]
-        dest = os.path.join(media_dir, "slide_%02d%s" % (i, os.path.splitext(src)[1].lower()))
-        shutil.copy2(src, dest)
-        w, h = probe_image_size(dest)
-        slide_clips.append(Clip(path=dest, start=slide["start"], end=slide["end"],
-                                still=True, width=w, height=h,
-                                name=os.path.basename(dest)))
+    # Slides become short videos rather than still references -- see
+    # render_slide_videos for why.
+    print("Encoding %d slide(s) as video:" % len(slides))
+    slide_paths = render_slide_videos(slides, media_dir, info)
+    slide_clips = [Clip(path=p, start=s["start"], end=s["end"], source_in=0.0,
+                        has_audio=False, name=os.path.basename(p))
+                   for p, s in zip(slide_paths, slides)]
 
-    camera_clip = Clip(path=os.path.abspath(args.camera_video), start=0.0,
-                       end=info["duration"], source_in=0.0)
+    # V1: the rough cut's own clips when available, so everything shares one
+    # timeline and the cut stays adjustable.
+    if args.rough_cut_xml:
+        camera_clips = camera_clips_from_rough_cut(args.rough_cut_xml)
+        print("V1 from rough cut: %d clip(s) referencing the original footage"
+              % len(camera_clips))
+    else:
+        camera_clips = [Clip(path=os.path.abspath(args.camera_video), start=0.0,
+                             end=info["duration"], source_in=0.0)]
+        print("V1 is the flattened trimmed video (pass --rough-cut-xml to keep "
+              "the cut adjustable)")
+
     overlay_clips = [Clip(path=o["path"], start=o["start"], end=o["end"],
-                          source_in=0.0, alpha=True,
+                          source_in=0.0, alpha=True, has_audio=False,
                           name=os.path.basename(o["path"])) for o in overlays]
 
     xml = build_fcp7_xml(
         sequence_name="%s_slides" % basename,
         fps=info["fps"], width=info["width"], height=info["height"],
-        video_tracks=[[camera_clip], slide_clips, overlay_clips],
-        audio_tracks=[[camera_clip]],
-        audio_channels=info["channels"], source_duration=info["duration"],
+        video_tracks=[camera_clips, slide_clips, overlay_clips],
+        audio_clips=camera_clips,
+        audio_channels=info["channels"], audio_sample_rate=info["sample_rate"],
+        source_duration=info["duration"],
     )
 
     xml_path = os.path.join(out_dir, "%s_slides.xml" % basename)
@@ -185,7 +281,7 @@ def main():
     total_overlay_mb = sum(os.path.getsize(o["path"]) for o in overlays) / 1e6
     print("\nDelivered to %s:" % out_dir)
     print("  %s" % os.path.basename(xml_path))
-    print("  %s/  (%d overlay(s) + %d slide(s), %.0f MB)"
+    print("  %s/  (%d overlay(s) + %d slide video(s), %.0f MB)"
           % (os.path.basename(media_dir), len(overlays), len(slide_clips), total_overlay_mb))
     print("\nImport the .xml; keep the _media folder and the camera file where they are.")
 

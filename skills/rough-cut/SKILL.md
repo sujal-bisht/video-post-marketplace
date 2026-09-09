@@ -314,6 +314,17 @@ written.
    the user had to ask which files mattered. Intermediates go in a scratch dir
    (Step 0); the output folder is for finished work only.
 
+9. **The rendered video and the XML disagreeing on length.** ffmpeg's trim keeps
+   whole frames, so each kept segment can run up to a frame long; across 135
+   segments that accumulated to a full second, while the XML rounded to nearest
+   and sometimes rounded down. One edit, three durations: exact sum 163.310s,
+   XML 163.100s, rendered 164.088s. It matters because `slide-cutout` reads cue
+   times from the rendered video and places them on a timeline built from the
+   XML -- two disagreeing clocks make slides drift, and the drift grows through
+   the video. Boundaries are snapped to the frame grid before rendering so both
+   paths work from identical times. **Never let the render and the XML compute
+   their own times independently.**
+
 The pattern connecting all of them: the pipeline reported what it *meant* to do
 instead of what it *did*, and trusted the transcript as though it were the
 audio. Measure the artifact, then speak.

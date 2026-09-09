@@ -128,6 +128,34 @@ def compute_keep_segments(cuts, duration):
     return [k for k in keep if k["end"] - k["start"] > 0.01]
 
 
+def snap_segments_to_frames(segments, fps):
+    """Move every keep-segment boundary onto an exact frame boundary.
+
+    Without this the rendered video and the XML describe timelines of DIFFERENT
+    lengths. ffmpeg's trim filter keeps whole frames, so each segment can run up
+    to one frame long; across 135 segments that accumulated to a full second.
+    The XML meanwhile rounds each boundary to the nearest frame, which can round
+    down. Measured on real footage: exact sum 163.310s, XML 163.100s, rendered
+    mp4 164.088s -- three different answers for one edit.
+
+    That matters beyond tidiness. The slide cutout derives its cue times by
+    transcribing the rendered video, then places them on a timeline built from
+    the XML; if those two clocks disagree the slides drift, and the drift grows
+    through the video.
+
+    Snapping first means ffmpeg's whole-frame behaviour and the XML's rounding
+    agree exactly, because there is nothing left to round.
+    """
+    fps_f = float(fps)
+    snapped = []
+    for seg in segments:
+        s = round(seg["start"] * fps_f) / fps_f
+        e = round(seg["end"] * fps_f) / fps_f
+        if e - s >= 1.0 / fps_f - 1e-9:
+            snapped.append({"start": s, "end": e})
+    return snapped
+
+
 def render_trimmed_video(source, keep_segments, out_path):
     if not keep_segments:
         raise SystemExit("No footage left after applying cuts -- refusing to render an empty video.")
@@ -137,10 +165,10 @@ def render_trimmed_video(source, keep_segments, out_path):
     concat_a = []
     for i, seg in enumerate(keep_segments):
         filter_parts.append(
-            f"[0:v]trim=start={seg['start']:.3f}:end={seg['end']:.3f},setpts=PTS-STARTPTS[v{i}]"
+            f"[0:v]trim=start={seg['start']:.6f}:end={seg['end']:.6f},setpts=PTS-STARTPTS[v{i}]"
         )
         filter_parts.append(
-            f"[0:a]atrim=start={seg['start']:.3f}:end={seg['end']:.3f},asetpts=PTS-STARTPTS[a{i}]"
+            f"[0:a]atrim=start={seg['start']:.6f}:end={seg['end']:.6f},asetpts=PTS-STARTPTS[a{i}]"
         )
         concat_v.append(f"[v{i}]")
         concat_a.append(f"[a{i}]")
@@ -265,6 +293,9 @@ def main():
 
     merged_cuts = merge_cuts(all_cuts, duration)
     keep_segments = compute_keep_segments(merged_cuts, duration)
+    # Both the render and the XML must work from identical frame-aligned times,
+    # or they end up describing timelines of different lengths.
+    keep_segments = snap_segments_to_frames(keep_segments, fps)
 
     trimmed_path = os.path.join(args.output_dir, f"{basename}_trimmed.mp4")
     xml_path = os.path.join(args.output_dir, f"{basename}.xml")
@@ -273,6 +304,9 @@ def main():
     height = int(video_stream["height"])
     audio_stream = next((x for x in probe["streams"] if x["codec_type"] == "audio"), None)
     audio_channels = int(audio_stream["channels"]) if audio_stream else 2
+    # The XML has to describe the audio essence, not just count channels: without
+    # a real sample rate the audio imports offline.
+    audio_rate = int(audio_stream.get("sample_rate", 48000)) if audio_stream else 48000
 
     render_trimmed_video(args.source_video, keep_segments, trimmed_path)
     # Frame-exact stacking: doing this in float seconds drifts a frame per clip.
@@ -281,8 +315,9 @@ def main():
     xml = build_fcp7_xml(
         sequence_name=basename + "_roughcut",
         fps=fps, width=width, height=height,
-        video_tracks=[clips], audio_tracks=[clips],
-        audio_channels=audio_channels, source_duration=duration,
+        video_tracks=[clips], audio_clips=clips,
+        audio_channels=audio_channels, audio_sample_rate=audio_rate,
+        source_duration=duration,
     )
     with open(xml_path, "w", encoding="utf-8") as f:
         f.write(xml)

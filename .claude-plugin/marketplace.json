@@ -5,14 +5,14 @@
     "email": "sujal@danielpaul.ai"
   },
   "metadata": {
-    "version": "0.2.0",
+    "version": "0.3.0",
     "description": "Local-first post-production automation for talking-head course video: rough cuts, dead-air removal, and slides with a circular speaker cutout, delivered as editable Premiere/Resolve timelines."
   },
   "plugins": [
     {
       "name": "video-post",
       "description": "Automated post-production for talking-head course video. rough-cut removes dead air, filler words, false starts and botched takes from raw footage, measuring real silence from audio levels rather than guessing. slide-cutout puts presentation slides on screen with the speaker as a circular corner cutout, timed from spoken cue phrases instead of hand-entered timestamps. Both hand back editable FCP7 XML timelines that Premiere Pro and DaVinci Resolve import, never a locked-off render. Runs entirely locally via Whisper, so footage never leaves the machine.",
-      "version": "0.2.0",
+      "version": "0.3.0",
       "author": {
         "name": "Sujal Bisht"
       },

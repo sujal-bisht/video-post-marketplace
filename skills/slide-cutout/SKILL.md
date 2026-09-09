@@ -116,13 +116,20 @@ building a timeline with slides silently missing.
 
 ```bash
 python scripts/build_timeline.py <trimmed.mp4> <scratch>/resolved.json <output_dir> \
-    --basename <name> --border-color "#RRGGBB"
+    --basename <name> --border-color "#RRGGBB" \
+    --rough-cut-xml <output_dir>/<name>.xml
 ```
+
+**Always pass `--rough-cut-xml`.** It puts the rough cut's own clips on V1, so
+the slides and cutouts land in the *same* timeline as the adjustable cut.
+Without it V1 is the flattened trimmed video, the user imports two unrelated
+timelines, and the cut can no longer be altered -- which is the whole reason the
+rough cut hands back clips in the first place.
 
 Renders one overlay per slide range (not one spanning the whole video — outside a
 slide range the cutout is not on screen, so rendering it there would be a
-gigabyte of transparent pixels nobody sees), copies the slides in beside the XML,
-and writes the timeline.
+gigabyte of transparent pixels nobody sees), encodes each slide as a short video
+into the media folder, and writes the timeline.
 
 Options worth knowing: `--diameter-pct`, `--border-px`, `--position`,
 `--margin-px`, `--codec`, and `--handles` (extra seconds of overlay either side
@@ -150,8 +157,12 @@ Report its numbers, not your intentions.
 
 Two things land in the output folder:
 
-- `<name>_slides.xml` — the timeline to import
-- `<name>_media/` — the overlays and slide copies it references
+- `<name>_slides.xml` — the one timeline to import
+- `<name>_media/` — the overlays and slide videos it references
+
+The rough cut's own `<name>.xml` is an input to this step, not something the
+user imports. Tell them to import the `_slides.xml` alone, or they end up with
+two timelines again.
 
 Tell the user: import the `.xml`, and leave the `_media` folder and the camera
 file where they are. An interchange XML holds absolute paths, so moving either
@@ -163,9 +174,9 @@ is done.
 
 ```
 V3   circular cutout overlays
-V2   slide stills
-V1   camera, full frame, whole video
-A1   camera audio
+V2   slides
+V1   the rough cut's own clips -- individual and still adjustable
+A1/A2  camera audio, one track per channel, linked to V1
 ```
 
 Full frame wherever no slide covers her; slide plus cutout where one does. Every
@@ -184,3 +195,13 @@ no effects to apply.
    to miss, so Step 5 checks it.
 5. **The circle clipping the speaker** when she sits off-centre. `--crop-offset-x`
    exists for this; look at the first video of a batch rather than assuming.
+6. **Two timelines instead of one.** Forgetting `--rough-cut-xml` causes it, and
+   it looks fine until the user opens the project and finds the cut in one
+   sequence and the overlays in another.
+7. **Audio importing offline.** A file has to declare its audio essence --
+   depth and sample rate, not just a channel count -- and a stereo source needs
+   one clipitem per channel rather than one claiming two. Both are handled in
+   `lib/fcp7xml.py`; never hand-roll XML that skips them.
+8. **Silent media claiming audio.** Overlays and slide videos have no audio
+   stream; declaring channels on them sends the importer hunting for essence
+   that does not exist.
