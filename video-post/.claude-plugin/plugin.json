@@ -1,0 +1,31 @@
+{
+  "name": "video-post",
+  "display_name": "Video Post-Production",
+  "version": "0.2.0",
+  "description": "Automated post-production for talking-head course video. rough-cut removes dead air, filler words, false starts and botched takes from raw footage, measuring real silence from audio levels rather than guessing. slide-cutout puts presentation slides on screen with the speaker as a circular corner cutout, timed from spoken cue phrases instead of hand-entered timestamps. Both hand back editable FCP7 XML timelines that Premiere Pro and DaVinci Resolve import, never a locked-off render. Runs entirely locally via Whisper -- no cloud APIs, footage never leaves the machine. Built for creators cutting large course batches who do not want to scrub through 100 videos by hand.",
+  "author": {
+    "name": "Sujal Bisht"
+  },
+  "keywords": [
+    "video",
+    "post-production",
+    "rough-cut",
+    "silence-removal",
+    "dead-air",
+    "filler-words",
+    "premiere-pro",
+    "davinci-resolve",
+    "fcp7-xml",
+    "whisper",
+    "transcription",
+    "course-video",
+    "talking-head",
+    "editing",
+    "slides",
+    "picture-in-picture",
+    "pip",
+    "cutout",
+    "powerpoint",
+    "presentation"
+  ]
+}
