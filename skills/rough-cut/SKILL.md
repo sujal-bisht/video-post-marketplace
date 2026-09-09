@@ -325,6 +325,13 @@ written.
    paths work from identical times. **Never let the render and the XML compute
    their own times independently.**
 
+10. **Audio offline while video links.** Pointing picture and sound at the same
+   source file makes the importer invent an audio-only view of it, and that
+   phantom imports as offline media. The XML's audio clips therefore reference
+   the rendered trimmed file (which already contains exactly this edit) while
+   the video clips reference the original footage. Verified by driving Resolve's
+   scripting API: 0 offline items, one media-pool entry per real file.
+
 The pattern connecting all of them: the pipeline reported what it *meant* to do
 instead of what it *did*, and trusted the transcript as though it were the
 audio. Measure the artifact, then speak.

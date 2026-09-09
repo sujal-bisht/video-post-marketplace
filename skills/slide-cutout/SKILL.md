@@ -143,7 +143,7 @@ reuse it.
 ### Step 5: Verify — not optional
 
 ```bash
-python scripts/verify_cutout.py <output_dir>/<name>_slides.xml --resolved <scratch>/resolved.json
+python scripts/verify_cutout.py <output_dir>/<name>.xml --resolved <scratch>/resolved.json
 ```
 
 Checks the things that are invisible in the XML and obvious on import: missing
@@ -157,12 +157,13 @@ Report its numbers, not your intentions.
 
 Two things land in the output folder:
 
-- `<name>_slides.xml` — the one timeline to import
+- `<name>.xml` — the one timeline to import
 - `<name>_media/` — the overlays and slide videos it references
 
-The rough cut's own `<name>.xml` is an input to this step, not something the
-user imports. Tell them to import the `_slides.xml` alone, or they end up with
-two timelines again.
+This step **replaces** the rough cut's `<name>.xml` with the merged timeline and
+deletes nothing else, so the folder holds exactly one XML. Two files in a folder
+invite two imports no matter what the instructions say -- telling the user "only
+import this one" did not work in practice, so there is only one to import.
 
 Tell the user: import the `.xml`, and leave the `_media` folder and the camera
 file where they are. An interchange XML holds absolute paths, so moving either
@@ -176,7 +177,7 @@ is done.
 V3   circular cutout overlays
 V2   slides
 V1   the rough cut's own clips -- individual and still adjustable
-A1/A2  camera audio, one track per channel, linked to V1
+A1/A2  audio from the trimmed cut, one track per channel, linked to V1
 ```
 
 Full frame wherever no slide covers her; slide plus cutout where one does. Every
@@ -198,10 +199,13 @@ no effects to apply.
 6. **Two timelines instead of one.** Forgetting `--rough-cut-xml` causes it, and
    it looks fine until the user opens the project and finds the cut in one
    sequence and the overlays in another.
-7. **Audio importing offline.** A file has to declare its audio essence --
-   depth and sample rate, not just a channel count -- and a stereo source needs
-   one clipitem per channel rather than one claiming two. Both are handled in
-   `lib/fcp7xml.py`; never hand-roll XML that skips them.
+7. **Audio importing offline while the video links.** Verified in Resolve: if
+   picture and sound both point at the *same* file, the importer invents an
+   audio-only view of it, and that phantom entry is what shows up offline. The
+   audio therefore references the trimmed cut while the video references the
+   original footage -- two distinct real files, nothing to guess. Confirmed by
+   scripting the import: 0 offline items, one pool entry per file. A file must
+   also declare depth and sample rate, not just a channel count.
 8. **Silent media claiming audio.** Overlays and slide videos have no audio
    stream; declaring channels on them sends the importer hunting for essence
    that does not exist.

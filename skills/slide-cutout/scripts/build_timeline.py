@@ -265,18 +265,38 @@ def main():
                           source_in=0.0, alpha=True, has_audio=False,
                           name=os.path.basename(o["path"])) for o in overlays]
 
+    # Audio comes from the trimmed cut rather than the original footage. Pointing
+    # picture and sound at one file makes the importer invent an audio-only view
+    # of it, and that phantom is what imported as offline media. Two distinct
+    # real files give it nothing to guess.
+    audio_clips = [Clip(path=os.path.abspath(args.camera_video), start=c.start,
+                        end=c.end, source_in=c.start) for c in camera_clips]
+
     xml = build_fcp7_xml(
         sequence_name="%s_slides" % basename,
         fps=info["fps"], width=info["width"], height=info["height"],
         video_tracks=[camera_clips, slide_clips, overlay_clips],
-        audio_clips=camera_clips,
+        audio_clips=audio_clips,
         audio_channels=info["channels"], audio_sample_rate=info["sample_rate"],
         source_duration=info["duration"],
     )
 
-    xml_path = os.path.join(out_dir, "%s_slides.xml" % basename)
+    # One timeline, one file. Emitting a second XML beside the rough cut's meant
+    # the user imported both and got two sequences -- documenting "import only
+    # this one" did not stop that, because two files in a folder invite two
+    # imports. The merged timeline supersedes the rough cut's, so it takes over
+    # the same filename and the old one is removed.
+    xml_path = os.path.join(out_dir, "%s.xml" % basename)
+    superseded = os.path.abspath(args.rough_cut_xml) if args.rough_cut_xml else None
     with open(xml_path, "w", encoding="utf-8") as f:
         f.write(xml)
+
+    replaces_input = (superseded and os.path.isfile(superseded)
+                      and os.path.abspath(xml_path) != superseded)
+    if replaces_input:
+        os.remove(superseded)
+        print("removed the superseded rough-cut timeline: %s"
+              % os.path.basename(superseded))
 
     total_overlay_mb = sum(os.path.getsize(o["path"]) for o in overlays) / 1e6
     print("\nDelivered to %s:" % out_dir)

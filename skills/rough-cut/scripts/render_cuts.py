@@ -56,7 +56,7 @@ for _candidate in (_HERE, _HERE.parents[2] / "lib"):
         sys.path.insert(0, str(_candidate))
         break
 try:
-    from fcp7xml import build_fcp7_xml, contiguous_clips
+    from fcp7xml import Clip, build_fcp7_xml, contiguous_clips
 except ImportError as exc:  # pragma: no cover
     raise SystemExit(
         "Cannot import the FCP7 XML writer (%s). Expected it either alongside "
@@ -312,10 +312,22 @@ def main():
     # Frame-exact stacking: doing this in float seconds drifts a frame per clip.
     clips = contiguous_clips(args.source_video, keep_segments, fps)
 
+    # Audio is taken from the RENDERED cut, not from the original footage.
+    #
+    # Pointing both picture and sound at the same source file makes the importer
+    # invent an audio-only view of that file, and that phantom entry is what came
+    # in as offline media in Resolve while the video linked fine. Two distinct
+    # real files -- original for picture, trimmed cut for sound -- give it nothing
+    # to guess: verified in Resolve, 0 offline and no duplicate pool item. The
+    # trimmed file already contains exactly this edit, so its timeline position
+    # and its in-point are the same number.
+    audio_clips = [Clip(path=trimmed_path, start=c.start, end=c.end, source_in=c.start)
+                   for c in clips]
+
     xml = build_fcp7_xml(
         sequence_name=basename + "_roughcut",
         fps=fps, width=width, height=height,
-        video_tracks=[clips], audio_clips=clips,
+        video_tracks=[clips], audio_clips=audio_clips,
         audio_channels=audio_channels, audio_sample_rate=audio_rate,
         source_duration=duration,
     )
