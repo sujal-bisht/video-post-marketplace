@@ -21,9 +21,21 @@ Usage:
 """
 import re
 import sys
+from pathlib import Path
 import json
 import argparse
 import subprocess
+
+
+_HERE = Path(__file__).resolve().parent
+for _candidate in (_HERE, _HERE.parents[2] / "lib"):
+    if (_candidate / "sync_check.py").is_file():
+        sys.path.insert(0, str(_candidate))
+        break
+try:
+    import sync_check
+except ImportError:  # pragma: no cover
+    sync_check = None
 
 
 def probe_duration(path):
@@ -103,6 +115,11 @@ def main():
     ap.add_argument("--check-transcript", default=None,
                     help="Transcript JSON of the RENDERED output (produced by re-running "
                          "transcribe.py on it). Enables the leftover-restart check.")
+    ap.add_argument("--xml", default=None,
+                    help="The companion timeline. Checks that its clips actually play what "
+                         "the rendered cut plays -- the one failure that every other check "
+                         "here sails past, because a clip can be the right length in the "
+                         "right place and still read from the wrong part of its source.")
     args = ap.parse_args()
 
     max_gap = args.max_gap_ms / 1000.0
@@ -154,6 +171,21 @@ def main():
                 print(f"    {fmt(first)} and {fmt(second)}: \"{phrase}\"")
         else:
             print("No leftover repeated phrases (no obvious missed restarts).")
+
+    if args.xml:
+        if sync_check is None:
+            print("\nFAIL: cannot check timeline sync -- sync_check.py was not found next to "
+                  "this script or at <plugin root>/lib/. Reinstall the video-post plugin.")
+            ok = False
+        else:
+            results, note = sync_check.check_timeline_sync(args.xml, args.rendered_video)
+            print("\nTimeline vs rendered cut:")
+            if not results:
+                print("  could not sample the timeline (%s)" % (note or "no clips"))
+            else:
+                lines, synced = sync_check.format_results(results, note)
+                print("\n".join(lines))
+                ok = ok and synced
 
     if ok:
         print(f"PASS: no gap exceeds {args.max_gap_ms:.0f}ms and the video opens on speech.")

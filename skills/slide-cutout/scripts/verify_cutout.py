@@ -20,7 +20,19 @@ import os
 import subprocess
 import sys
 import xml.etree.ElementTree as ET
+from pathlib import Path
 from urllib.parse import unquote, urlparse
+
+
+_HERE = Path(__file__).resolve().parent
+for _candidate in (_HERE, _HERE.parents[2] / "lib"):
+    if (_candidate / "sync_check.py").is_file():
+        sys.path.insert(0, str(_candidate))
+        break
+try:
+    import sync_check
+except ImportError:  # pragma: no cover
+    sync_check = None
 
 
 def probe(path, entries):
@@ -49,6 +61,10 @@ def main():
     ap.add_argument("timeline_xml")
     ap.add_argument("--resolved", default=None,
                     help="resolved_slides.json, to confirm the timeline matches the plan.")
+    ap.add_argument("--rendered-cut", default=None,
+                    help="The rough cut's <name>_trimmed.mp4. Checks that V1 actually plays "
+                         "what that file plays; without it the sync check is skipped and "
+                         "says so. Defaults to a matching _trimmed.mp4 beside the XML.")
     ap.add_argument("--tolerance-frames", type=int, default=1,
                     help="Allowed difference when comparing planned times to the timeline; "
                          "one frame is the inherent rounding of a frame-addressed format.")
@@ -187,6 +203,34 @@ def main():
                           % (fmt(want, timebase), fmt(s["start"], timebase)))
             else:
                 print("Every slide sits where the plan put it.")
+
+    # Does V1 play what the cut plays? Everything above can pass while picture
+    # and sound sit seconds apart, because a clip's position and its in-point
+    # are independent numbers.
+    rendered = args.rendered_cut
+    if not rendered:
+        guess = os.path.join(os.path.dirname(os.path.abspath(args.timeline_xml)),
+                             os.path.splitext(os.path.basename(args.timeline_xml))[0]
+                             + "_trimmed.mp4")
+        rendered = guess if os.path.isfile(guess) else None
+    print()
+    if sync_check is None:
+        ok = False
+        print("FAIL: sync_check.py not found next to this script or at <plugin root>/lib/. "
+              "Reinstall the video-post plugin.")
+    elif not rendered:
+        print("SKIPPED the sync check: no rendered cut to compare against. Pass "
+              "--rendered-cut <name>_trimmed.mp4 -- lip sync is exactly the kind of fault "
+              "the other checks cannot see.")
+    else:
+        results, note = sync_check.check_timeline_sync(args.timeline_xml, rendered)
+        print("V1 vs the rendered cut:")
+        if not results:
+            print("  could not sample the timeline (%s)" % (note or "no clips"))
+        else:
+            lines, synced = sync_check.format_results(results, note)
+            print("\n".join(lines))
+            ok = ok and synced
 
     if ok:
         print("\nPASS: media all present, tracks well-formed, overlays have alpha, "

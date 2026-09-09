@@ -354,9 +354,15 @@ def main():
     audio_path = os.path.join(args.output_dir, "%s_audio.wav" % basename)
     extract_audio(args.source_video, keep_segments, audio_path)
 
-    video_source = os.path.abspath(args.source_video) if args.reference_original else trimmed_path
+    # Picture and sound have to be read off the same clock. The trimmed file and
+    # the wav both already contain only the kept segments, so a clip on them
+    # reads from its own timeline position; the original still holds everything,
+    # so a clip on it reads from where that segment sat in the raw footage.
+    reference_original = bool(args.reference_original)
+    video_source = os.path.abspath(args.source_video) if reference_original else trimmed_path
     # Frame-exact stacking: doing this in float seconds drifts a frame per clip.
-    clips = contiguous_clips(video_source, keep_segments, fps)
+    clips = contiguous_clips(video_source, keep_segments, fps,
+                             pre_trimmed=not reference_original)
     audio_clips = [Clip(path=audio_path, start=c.start, end=c.end, source_in=c.start)
                    for c in clips]
 

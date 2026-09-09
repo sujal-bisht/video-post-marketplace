@@ -167,6 +167,13 @@ media, overlapping clips, overlays that do not match their slide, overlays
 missing an alpha channel (which would show as a solid rectangle instead of a
 circle), and a camera track that ends before the sequence does.
 
+It also checks **lip sync** -- whether V1 actually plays what the rough cut
+plays -- by comparing the audio each clip reads against the audio at that moment
+in the rendered cut. It finds `<name>_trimmed.mp4` beside the XML on its own;
+pass `--rendered-cut` if it lives elsewhere. If it says the check was skipped,
+do not treat the timeline as verified: sound drifting from picture is invisible
+to every other check here, and it reached a user that way once.
+
 Report its numbers, not your intentions.
 
 ### Step 6: Hand it over
@@ -239,7 +246,13 @@ no effects to apply.
    at the rendered file. Geometry is percentage-based, clamped to 8-30%, and
    verified against the alpha bounding box before hand-off. **No parameter is
    proof of anything until the output has been measured.**
-10. **Accented words splitting into two tokens.** Cue matching tokenised on
+10. **Sound and picture on different clocks.** V1 is copied from the rough cut,
+   so a rough cut built with in-points meant for a different file hands this
+   skill an out-of-sync camera track and everything downstream inherits it. The
+   whole structural suite passed while lips ran seconds off the audio. Step 5
+   now compares audio content, and a rough cut made before that fix should be
+   re-rendered rather than reused.
+11. **Accented words splitting into two tokens.** Cue matching tokenised on
    `a-z`, so "glueckliche" became two tokens at the umlaut. Cue and transcript
    were mangled identically, so matches still landed — but token counts
    stopped matching word counts, which quietly distorted the scores and the

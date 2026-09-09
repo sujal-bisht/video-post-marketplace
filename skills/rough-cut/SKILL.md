@@ -261,11 +261,18 @@ Re-transcribe the finished cut, then verify against it:
 ```bash
 python scripts/transcribe.py <output_dir>/<name>_trimmed.mp4 <out_transcript.json> --model small
 python scripts/verify_output.py <output_dir>/<name>_trimmed.mp4 --original <video> \
-    --check-transcript <out_transcript.json>
+    --xml <output_dir>/<name>.xml --check-transcript <out_transcript.json>
 ```
 
 This fails loudly if the video opens on silence or any internal gap exceeds
 150ms, and separately lists repeated phrases still present in the cut.
+
+**Always pass `--xml`.** It checks that the timeline actually plays what the
+rendered cut plays, by comparing the audio each clip reads against the audio at
+the same moment in the render. Nothing else catches lip sync: a clip's position
+and its in-point are independent numbers, so an edit can have every clip in the
+right place, at the right length, pointing at a file that exists, and still show
+footage from somewhere else entirely. That shipped to a user once -- failure 12.
 
 Re-transcribing the *output* is not busywork -- it is the only way to catch
 restarts that were invisible in the original transcript (see signature 0 in
@@ -360,6 +367,24 @@ written.
    the importer was searching -- the test could not have failed. **Whenever you
    claim media links, the proof has to be an import whose search folder contains
    only the output folder.**
+
+12. **Sound and picture on two different clocks.** The user played the timeline
+   and saw lips out of step with the audio. `contiguous_clips()` gives every clip
+   an in-point taken from where its segment sat in the ORIGINAL footage --
+   correct while the clips referenced the original, and wrong the moment they
+   were repointed at the rendered cut to fix offline media (failure 11), because
+   that file already IS the concatenation. Each clip then read from further and
+   further ahead: 59 frames of drift by the end of a 45-second test, growing with
+   everything removed. `contiguous_clips(..., pre_trimmed=True)` now states which
+   kind of file it is pointing at.
+
+   Worth dwelling on: **every existing check passed.** Media present, tracks
+   well-formed, nothing overlapping, durations matching to the frame, zero
+   offline items on a scripted Resolve import. A fix for one fault created
+   another that the entire verification suite was blind to, because all of it
+   examined structure and none of it asked what the timeline actually plays.
+   Hence `--xml`, which compares audio content and is deliberately indifferent
+   to the numbers that produced the file.
 
 The pattern connecting all of them: the pipeline reported what it *meant* to do
 instead of what it *did*, and trusted the transcript as though it were the

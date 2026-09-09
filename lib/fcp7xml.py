@@ -162,7 +162,7 @@ class _FileRegistry:
              self._rate, width, height, alpha, audio)
 
 
-def contiguous_clips(path, segments, fps, **clip_kwargs):
+def contiguous_clips(path, segments, fps, pre_trimmed=False, **clip_kwargs):
     """Lay source segments end to end with frame-exact lengths.
 
     Accumulating timeline positions in float seconds and rounding later loses a
@@ -172,6 +172,20 @@ def contiguous_clips(path, segments, fps, **clip_kwargs):
     exactly as long as the source frames it covers, with nothing to accumulate.
 
     segments is a list of {"start": seconds, "end": seconds} in SOURCE time.
+
+    `pre_trimmed` says what `path` actually contains, and getting it wrong puts
+    sound and picture on two different clocks:
+
+      False -- `path` is the ORIGINAL footage, so each clip reads from where its
+               segment sat in that footage.
+      True  -- `path` already IS these segments concatenated (the rendered cut),
+               so each clip reads from its own position on the timeline. Its
+               in-point is the running cursor, not the original timestamp.
+
+    This shipped wrong once. The clips were repointed at the rendered cut to fix
+    an offline-media problem, but kept the original file's in-points, so every
+    clip pulled footage from further and further ahead -- 59 frames of lip-sync
+    drift by the end of a 45-second test, growing with everything removed.
     """
     fps_f = float(Fraction(fps) if not isinstance(fps, Fraction) else fps)
 
@@ -188,7 +202,7 @@ def contiguous_clips(path, segments, fps, **clip_kwargs):
         clips.append(Clip(path=path,
                           start=cursor / fps_f,
                           end=(cursor + length) / fps_f,
-                          source_in=s_in / fps_f,
+                          source_in=(cursor if pre_trimmed else s_in) / fps_f,
                           **clip_kwargs))
         cursor += length
     return clips
