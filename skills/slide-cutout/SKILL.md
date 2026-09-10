@@ -212,6 +212,16 @@ Full frame wherever no slide covers her; slide plus cutout where one does. Every
 piece is an ordinary clip — drag a slide's edge, delete one, swap one out — with
 no effects to apply.
 
+## If zooms are also wanted
+
+Run `slow-zoom` **after** this skill, never before. It reads this timeline to
+find the camera clips and the spans where a slide covers them, and a zoom placed
+under a slide is invisible -- she is a corner circle there.
+
+Effects already on V1 are carried across when this skill merges, so a zoom added
+first is not destroyed. It is simply in the wrong place, which its own verifier
+catches. Order still matters; it just fails loudly instead of quietly.
+
 ## Failure modes worth knowing
 
 1. **A cue that cannot be found silently loses a slide.** Hence the refusal and

@@ -117,6 +117,17 @@ trimmed video and the `.wav`. On the timeline you'll find your
 camera on the bottom track, slides above it, and your circular cutout on top —
 all normal clips you can drag, shorten or delete.
 
+### Slow zooms
+
+Ask for them and they get placed for you:
+
+> Add some slow zooms to lesson-03.
+
+You don't say where. It reads what you said, picks the two or three moments that
+carry weight, and puts a gentle push-in on each one — leaving the rest wide.
+They arrive as normal keyframes on the clips, so you can soften one, move it, or
+delete it in your editor. Nothing is re-rendered, so this adds no waiting.
+
 ### Captions
 
 Premiere does these well on its own: `Text` panel → `Transcribe Sequence` →

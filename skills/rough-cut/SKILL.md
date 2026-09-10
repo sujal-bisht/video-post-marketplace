@@ -240,6 +240,10 @@ a search location when importing or the picture shows offline. Do not pass it
 unless the user asks for that specific ability, and if you do, say that out loud
 when handing over.
 
+Slides and slow zooms are added on top of this timeline by the `slide-cutout`
+and `slow-zoom` skills, in that order. Both edit this same XML rather than
+writing one of their own, so an output folder never holds two timelines.
+
 Captions are not produced here -- the `captions` skill handles them, reading
 this trimmed output. It applies proper cue segmentation (line length, reading
 speed, sentence-aware breaks) that a by-product SRT from this script did not,

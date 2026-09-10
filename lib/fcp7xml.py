@@ -75,6 +75,9 @@ class Clip:
                 overlays and stills do not; claiming otherwise makes importers
                 hunt for essence that is not there.
     width/height  the media's own dimensions; defaults to the sequence size
+    filters     raw <filter> XML to attach to this clip, e.g. a keyframed zoom.
+                Kept as a string because the effects an editor understands are
+                its own dialect, not something this writer should model.
     """
     path: str
     start: float
@@ -86,6 +89,7 @@ class Clip:
     has_audio: bool = True
     width: int = None
     height: int = None
+    filters: str = ""
 
 
 def fps_to_timebase(fps):
@@ -277,8 +281,9 @@ def build_fcp7_xml(sequence_name, fps, width, height, video_tracks,
         return (
             '        <clipitem id="%s"><name>%s</name>%s'
             "<start>%d</start><end>%d</end><in>%d</in><out>%d</out>"
-            "<enabled>TRUE</enabled>%s%s</clipitem>"
-        ) % (cid, name, rate, t_start, t_end, s_in, s_out, file_ref, extra)
+            "<enabled>TRUE</enabled>%s%s%s</clipitem>"
+        ) % (cid, name, rate, t_start, t_end, s_in, s_out, file_ref, extra,
+             clip.filters or "")
 
     # Video tracks first, so each file is fully defined before any audio clipitem
     # refers to it by id.

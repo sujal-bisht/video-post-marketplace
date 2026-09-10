@@ -85,6 +85,11 @@ def camera_clips_from_rough_cut(xml_path):
     whole point of the cut timeline is that its clips can still be nudged, and
     the whole point of the overlays is that they sit above that. Reading the
     rough cut's clips here puts everything in one sequence.
+
+    Effects on those clips are carried across verbatim. Dropping them would
+    silently erase zooms if the slow-zoom skill happened to run first, and a
+    feature that quietly disappears depending on the order of two commands is
+    worse than one that is missing.
     """
     root = ET.parse(xml_path).getroot()
     seq = root.find("sequence")
@@ -102,12 +107,15 @@ def camera_clips_from_rough_cut(xml_path):
         path = files.get(ref.get("id")) if ref is not None else None
         if not path:
             raise SystemExit("A clip in %s references an unknown file id" % xml_path)
+        filters = "".join(ET.tostring(f, encoding="unicode").strip()
+                          for f in c.findall("filter"))
         clips.append(Clip(
             path=path,
             start=int(c.findtext("start")) / timebase,
             end=int(c.findtext("end")) / timebase,
             source_in=int(c.findtext("in")) / timebase,
             name=c.findtext("name"),
+            filters=filters,
         ))
     if not clips:
         raise SystemExit("No clips found on V1 of %s" % xml_path)
