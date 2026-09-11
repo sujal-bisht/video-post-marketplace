@@ -34,10 +34,11 @@ removed -- that IS a real discontinuity, and framing can reset there for free.
 import re
 import xml.etree.ElementTree as ET
 
-# The look, decided once (see SKILL.md). A gentle push reads as intentional;
-# anything stronger reads as a gimmick, and on a 4K sequence it is also an
-# upscale of the source.
-DEFAULT_PEAK_PCT = 108.0
+# The look, decided once (see SKILL.md): every zoom is the same 110%. Varying
+# the strength was considered and rejected -- zooms that differ slightly read as
+# inconsistency rather than as variety. On a 4K sequence this is an upscale of
+# the source, which is why it stops at 110 rather than going further.
+DEFAULT_PEAK_PCT = 110.0
 DEFAULT_RAMP_OUT_S = 2.0
 MAX_PEAK_PCT = 120.0
 

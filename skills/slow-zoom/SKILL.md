@@ -41,9 +41,10 @@ would you like the zooms?" has automated nothing.
 So placement is decided here, the same way filler cuts and restarts are decided
 in `rough-cut`: arithmetic narrows it down, judgment picks.
 
-**`plan_zooms.py` finds what is eligible** -- long enough to breathe (8-14s),
-spaced out (one per ~45s), not under a slide, not in the opening seconds. That
-is bookkeeping across a whole video, and code does not get bored doing it.
+**`plan_zooms.py` lays out the cadence** -- a zoom, a quiet stretch, a zoom --
+at the lengths and spacing in the standards below, skipping anything under a slide
+or in the opening seconds. It prints the coverage that keeping every candidate
+would give, and **how many you must keep to hit the target**.
 
 **You choose from those candidates by reading what she is saying.** Zoom on the
 moment that carries weight: the point being made, the payoff, the "here's why
@@ -51,24 +52,54 @@ this matters", the reassurance the whole section was building to. Leave the
 setup, the throat-clearing and the throwaway lines wide. A push-in is emphasis;
 emphasis everywhere is emphasis nowhere.
 
-Most videos want **two or three**. If every candidate looks worth zooming, none
-of them are -- pick the strongest and move on.
+**Keep at least the number the planner asks for.** The candidates are already
+spaced to land on the target, so dropping them is what makes a video too sparse
+-- on the first real test three of four were kept and coverage fell to 20%. Drop
+one only when it genuinely carries nothing, and when you do, the verifier will
+tell you if the pacing fell out of range.
 
-## The look, and why it is what it is
+## The standards
 
-100% to 108%, linear, then easing back to 100% over the last two seconds.
+These are the numbers, and they are not suggestions -- the first release got the
+smoothness perfect and the pacing wrong, which is just as visible.
+
+| | value | why |
+|---|---|---|
+| Strength | **110%**, every time | One standard. Zooms that differ slightly read as inconsistency, not variety. |
+| Length | **12-16s** | Long enough to feel like a drift rather than a move. |
+| Quiet between | **14s** minimum | Below this the frame never settles. |
+| Coverage | **~50% of eligible time** | Half moving, half still. |
+| First zoom | **by 0:20** | A video that opens static reads as static. |
+
+**Coverage is the number that matters; length and spacing are only the knobs
+that produce it, and they have to agree.** Half the runtime moving means the
+zooms and the still stretches are about equal, so a 14s gap needs a 14s zoom.
+Shorter zooms at the same spacing land near 40%, which is what the first attempt
+did: 10-14s zooms 45s apart gave three isolated events in three minutes, 20% of
+the runtime moving. It did not read as a style.
+
+Coverage is measured against **eligible** time, not total runtime -- stretches
+where a slide covers the camera cannot move, whatever the setting says.
+
+`verify_zooms.py` fails a video outside 38-62%, so a timeline that drifted too
+sparse or too busy is caught here rather than by the person watching it.
+
+## The shape of one zoom
+
+100% to 110%, linear, then easing back to 100% over the last two seconds.
 
 **Why it comes back out.** In ordinary editing a zoom can simply end on a cut,
 because a cut is a visual break that hides the change of framing. The cuts here
 are not: `rough-cut` removes silence from one continuous shot, so an edit point
-is invisible, and dropping from 108% to 100% across one reads as a glitch. The
+is invisible, and dropping from 110% to 100% across one reads as a glitch. The
 one exception is a junction where a lot of material was removed -- that is a
 real discontinuity, and framing resets there for free. `apply_zooms.py` spots
 those on its own and holds the zoom instead of easing it.
 
-**Why only 8%.** On a 4K sequence a zoom is an upscale of the source. Gentle
-reads as intentional; strong reads as a gimmick and starts to soften the
-picture. `--peak-pct` goes up to 120 and is capped there.
+**Why 110% and always the same.** On a 4K sequence a zoom is an upscale of the
+source, so there is a real cost to going further; `--peak-pct` is capped at 120.
+Varying the strength between zooms was considered and rejected -- small
+differences read as inconsistency rather than as variety.
 
 **Why centred, and when not.** `--centre-x` shifts the zoom centre when the
 speaker does not sit mid-frame, so pushing in does not drift her out of shot.
@@ -88,8 +119,10 @@ The transcript must be of the **trimmed** video, so its times match the
 timeline. `rough-cut` already made one while verifying its output -- reuse it
 rather than transcribing again.
 
-Tunables: `--min-len`, `--max-len`, `--min-gap`, `--skip-head`. Leave them alone
-unless the user asks for more or fewer zooms; they encode the pacing.
+Tunables: `--min-len`, `--max-len`, `--min-quiet`, `--coverage`, `--first-by`,
+`--skip-head`. Leave them alone unless the user asks for a different feel; they
+encode the standards above. If asked for "more movement", raise `--coverage`
+rather than hand-editing the others -- it is the number the rest follow from.
 
 ### Step 2: Choose, and write the choice down
 
@@ -128,6 +161,11 @@ invisible in an editor until playback: a clip inside a zoom carrying no
 keyframes (it plays at 100% and pops), slices that disagree where they meet,
 keyframe times written against the wrong clock, a zoom that never returns to
 100%, a zoom buried under a slide.
+
+It also checks **pacing**: how much of the eligible runtime moves, and when the
+first zoom arrives. A timeline outside 38-62% coverage fails here. That check
+exists because the first release passed every other test while being visibly too
+sparse to watch.
 
 Report its numbers.
 
@@ -170,7 +208,9 @@ in the XML. No encode, no extra media, no minutes added to the run.
    verified byte-identical on a second run.
 4. **A zoom under a slide.** Invisible work. Run this skill after
    `slide-cutout`; Step 4 fails if one ends up buried.
-5. **Too many zooms.** Constant motion reads as cheap and gives the viewer
-   nothing to notice. The 45-second spacing is a floor, not a target.
+5. **Wrong density, in either direction.** Too sparse reads as three accidents
+   rather than a style; too busy gives the viewer nothing to notice. The first
+   release shipped at 20% coverage with 47-second gaps and passed every check,
+   because smoothness was measured and density was not. Both are measured now.
 6. **Zooming a face that is off-centre.** A centred push drifts her out of
    frame. Look at the first video of a batch and set `--centre-x`.

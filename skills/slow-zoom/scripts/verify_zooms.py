@@ -60,6 +60,12 @@ def main():
     ap.add_argument("--peak-pct", type=float, default=zoom.DEFAULT_PEAK_PCT)
     ap.add_argument("--tolerance", type=float, default=0.15,
                     help="Allowed disagreement, in percentage points, where two clips meet.")
+    ap.add_argument("--coverage", type=float, default=0.5,
+                    help="Fraction of the runtime that should be moving.")
+    ap.add_argument("--coverage-slack", type=float, default=0.12,
+                    help="How far from the target is still acceptable.")
+    ap.add_argument("--first-by", type=float, default=20.0,
+                    help="The first zoom should have started by here.")
     args = ap.parse_args()
 
     points, fps, per_clip = zoom.read_ramp_from_xml(args.timeline_xml)
@@ -69,6 +75,8 @@ def main():
     covered = zoom.read_timeline(args.timeline_xml)["covered"]
 
     ok = True
+    gestures = []
+    timeline = zoom.read_timeline(args.timeline_xml)
     spans = zoom_spans(per_clip, fps)
     print("%d zoom(s) across %d camera clip(s) at %.3f fps:"
           % (len(spans), sum(1 for c in per_clip if c["keys"]), fps))
@@ -86,6 +94,7 @@ def main():
             hi = keys[min(len(keys) - 1, moving[-1] + 1)][0]
         else:
             lo, hi = sp["start"], sp["end"]
+        gestures.append((lo, hi))
         print("  %s -> %s   peak %.1f%%   %d clip(s), %d keyframe(s)"
               % (fmt(lo), fmt(hi), peak, len(sp["clips"]), len(keys)))
 
@@ -153,9 +162,32 @@ def main():
             ok = False
             print("  FAIL: zooms at %s and %s overlap." % (fmt(a["start"]), fmt(b["start"])))
 
+    # 8. pacing. The first release was structurally perfect and still wrong to
+    #    watch: three zooms in three minutes, 47s apart, 20% of the runtime
+    #    moving. Smoothness was measured; density was not, so nobody noticed.
+    duration = timeline["duration"] or 1.0
+    moving = sum(hi - lo for lo, hi in gestures)
+    coverage = moving / duration
+    first = min((lo for lo, _ in gestures), default=None)
+    print()
+    print("Pacing: %d zoom(s), %.0fs of %.0fs moving (%.0f%%, target %.0f%%); first at %s."
+          % (len(gestures), moving, duration, 100 * coverage, 100 * args.coverage,
+             fmt(first) if first is not None else "n/a"))
+    if coverage < args.coverage - args.coverage_slack:
+        ok = False
+        print("  FAIL: too sparse. The zooms read as isolated events rather than as a "
+              "style. Keep more of the planner's candidates.")
+    elif coverage > args.coverage + args.coverage_slack:
+        ok = False
+        print("  FAIL: too busy. Constantly moving gives the viewer nothing to notice.")
+    if first is not None and first > args.first_by:
+        print("  note: nothing moves until %s. Fine only if a slide covers the opening."
+              % fmt(first))
+
     print()
     if ok:
-        print("PASS: every zoom climbs smoothly, the slices meet, and the framing returns.")
+        print("PASS: every zoom climbs smoothly, the slices meet, the framing returns, "
+              "and the pacing is right.")
         return 0
     print("These zooms will not land as intended. Fix before handing the timeline over.")
     return 1
