@@ -1,20 +1,13 @@
 ---
 name: slide-cutout
 description: >
-  Puts presentation slides on screen with the speaker as a circular cutout in
-  the corner, the standard teaching-video look. Slide timing comes from spoken
-  cue phrases ("slide 2 starts when I say 'now the second piece'") matched
-  against a word-level transcript, so nobody has to enter timestamps. Delivers
-  an editable FCP7 XML timeline that Premiere Pro and DaVinci Resolve both
-  import -- camera, slides and cutout on separate tracks as ordinary clips, not
-  a finished render -- so slide timings stay adjustable. Runs locally, footage
-  never leaves the machine. Use whenever the user wants to: add slides or a
-  PowerPoint/PDF to a talking-head video, show slides with themselves in a
-  corner circle or bubble, make picture-in-picture or PIP over slides, do the
-  "teaching video" look, or overlay screen graphics on a lesson. Trigger even
-  without these words -- e.g. "put my deck on screen while I talk", "shrink me
-  into the corner when the slides come up", "add my presentation to these
-  lessons".
+  Puts presentation slides on screen with the speaker as a circular corner
+  cutout, timed from spoken cue phrases rather than timestamps, into the same
+  editable timeline. OFF by default: run it only when the user asks for slides
+  or a cutout AND provides the slide images. If they ask without the images,
+  ask for them first; never invent slides. Trigger on: "add my slides", "put my
+  deck on screen while I talk", "me in a circle in the corner", "picture in
+  picture over my presentation".
 ---
 
 # Slide Cutout

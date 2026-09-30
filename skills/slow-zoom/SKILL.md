@@ -1,27 +1,23 @@
 ---
 name: slow-zoom
 description: >
-  Adds slow push-ins to a talking-head timeline -- the gentle zoom that lands on
-  the moments that carry weight and leaves the rest wide. Places them
-  automatically by reading the transcript; the user is never asked where. Writes
-  keyframed scale into the FCP7 XML timeline that already exists, so Premiere
-  Pro and DaVinci Resolve both show an ordinary adjustable effect on ordinary
-  clips, and nothing is re-rendered. Use whenever the user wants to: add zooms
-  or push-ins to talking-head footage, make a static shot feel less flat, add
-  movement or "some life" to a locked-off camera, or emphasise key moments in a
-  lesson. Trigger even without the word zoom -- e.g. "it feels static", "add
-  some movement", "punch in on the important bits", "make it less boring to
-  watch".
+  One step of edit-video: adds slow push-ins on the moments that carry weight,
+  placed automatically from the transcript, written as keyframes into the
+  existing timeline. Runs by default inside edit-video. Use directly only to add
+  zooms to a timeline that already exists -- "add zooms to this edit", "it
+  feels static, add some movement". Any general request to edit a video belongs
+  to edit-video.
 ---
 
 # Slow Zoom
 
 A slow push-in on the lines that matter, and nothing on the lines that do not.
 
-## Run this last
+## Where this sits in the edit
 
-After `rough-cut`, and after `slide-cutout` if slides are being used. Two
-reasons, both learned by doing it in the wrong order:
+After `rough-cut`, after `slide-cutout` if slides are being used, and before
+`edit-video`'s finish step, which renders these zooms into the final video. Two
+reasons for the order, both learned by doing it wrong:
 
 - Zooming the camera track underneath a slide is invisible -- she is a small
   circle in the corner there. The planner skips covered spans, but it can only

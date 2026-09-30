@@ -125,6 +125,21 @@ def main():
     if not words:
         raise SystemExit("That transcript has no word timings.")
 
+    # Short-form needs its own cadence. The long-form numbers (12-16s zooms,
+    # 14s of stillness, 4s before anything moves) were tuned on multi-minute
+    # videos; on a 17-second clip they produced one 12.6s zoom covering 99% of
+    # it, starting a quarter of the way in. Shorter videos get shorter, closer
+    # moves and an earlier start, unless the user set the numbers themselves.
+    SHORT_FORM = 60.0
+    if tl["duration"] < SHORT_FORM:
+        defaults = ap.parse_args([args.timeline_xml, args.transcript_json, args.output_json])
+        for field, short_value in (("min_len", 4.0), ("max_len", 7.0),
+                                   ("min_quiet", 4.0), ("skip_head", 1.0)):
+            if getattr(args, field) == getattr(defaults, field):
+                setattr(args, field, short_value)
+        print("Short-form (%.0fs): zooms of %.0f-%.0fs, %.0fs apart, from %.0fs in."
+              % (tl["duration"], args.min_len, args.max_len, args.min_quiet, args.skip_head))
+
     starts, ends = phrase_boundaries(words)
     regions = free_regions(tl["duration"], tl["covered"], args.skip_head)
 

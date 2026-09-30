@@ -5,14 +5,14 @@
     "email": "sujal@danielpaul.ai"
   },
   "metadata": {
-    "version": "0.6.2",
+    "version": "0.7.0",
     "description": "Local-first post-production automation for talking-head course video: rough cuts, dead-air removal, slides with a circular speaker cutout, and automatic slow zooms, delivered as one editable Premiere/Resolve timeline."
   },
   "plugins": [
     {
       "name": "video-post",
-      "description": "Automated post-production for talking-head video. rough-cut removes dead air, filler words and false starts, measuring real silence rather than guessing. slide-cutout puts slides on screen with the speaker as a circular corner cutout, timed from spoken cues. slow-zoom adds gentle push-ins on the lines that carry weight. All three write one editable FCP7 XML timeline for Premiere Pro and DaVinci Resolve, never a locked render. Runs locally; footage never leaves the machine.",
-      "version": "0.6.2",
+      "description": "Post-production for talking-head video, run locally. Hand it raw footage and it asks for your brand font, colour and caption style, then cuts the dead air and fumbled takes, adds slow zooms, and captions it in your brand. You get a post-ready video plus an editable Premiere/Resolve timeline. Slides with a circular speaker cutout on request. Captions only, for an already-edited video, too.",
+      "version": "0.7.0",
       "author": {
         "name": "Sujal Bisht"
       },
@@ -25,18 +25,26 @@
         "silence-removal",
         "dead-air",
         "filler-words",
-        "slides",
-        "picture-in-picture",
-        "cutout",
         "premiere-pro",
         "davinci-resolve",
         "fcp7-xml",
         "whisper",
+        "transcription",
         "course-video",
         "talking-head",
+        "editing",
+        "slides",
+        "picture-in-picture",
+        "pip",
+        "cutout",
+        "powerpoint",
+        "presentation",
         "zoom",
         "push-in",
-        "ken-burns"
+        "ken-burns",
+        "captions",
+        "subtitles",
+        "brand"
       ],
       "source": "./",
       "strict": false

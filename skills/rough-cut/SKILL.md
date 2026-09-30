@@ -1,19 +1,14 @@
 ---
 name: rough-cut
 description: >
-  Produces a tight rough cut of raw talking-head video by removing dead air,
-  filler words ("um", "uh", junk sounds), false starts, self-corrections,
-  repeated takes, and tangents, while preserving natural style (laughter,
-  "you know", "right?"). Editor-agnostic (CapCut, Premiere, DaVinci, or any
-  NLE) -- outputs a plain video file plus an optional non-destructive
-  companion timeline. Runs entirely locally via Whisper, no cloud APIs,
-  footage never leaves the machine. Use whenever the user wants to: trim raw
-  footage, remove silence/dead air, cut filler words or "ums and uhs", make a
-  rough cut or first-pass edit, batch-process a folder of talking-head videos
-  before editing, or turn unedited footage into something ready for an editor.
-  Trigger even without "rough cut" -- e.g. "clean up my footage", "get rid of
-  the pauses", "I filmed videos and need them trimmed", "cut the dead space
-  out of this".
+  One step of edit-video: removes dead air, filler words, false starts,
+  self-corrections and repeated takes from raw talking-head footage, while
+  keeping natural style (laughter, "you know", "right?"). Measures real silence
+  from the audio. Hands back a trimmed video and an editable FCP7 XML timeline.
+  Normally run BY edit-video, which also zooms and captions by default. Use this
+  directly only when the user explicitly wants a rough cut and nothing else --
+  "just cut the pauses, no captions", "only trim it". Any general request to
+  clean up, trim or edit a video belongs to edit-video.
 ---
 
 # Rough Cut
@@ -240,14 +235,14 @@ a search location when importing or the picture shows offline. Do not pass it
 unless the user asks for that specific ability, and if you do, say that out loud
 when handing over.
 
-Slides and slow zooms are added on top of this timeline by the `slide-cutout`
-and `slow-zoom` skills, in that order. Both edit this same XML rather than
-writing one of their own, so an output folder never holds two timelines.
+This is the first step of `edit-video`. After it, slides (only when asked for),
+slow zooms and captions are added on top of this timeline, in that order, and
+`edit-video`'s finish step renders the post-ready `<name>_final.mp4`. Every
+step edits this same XML rather than writing one of its own, so an output
+folder never holds two timelines.
 
-Captions are not produced here -- the `captions` skill handles them, reading
-this trimmed output. It applies proper cue segmentation (line length, reading
-speed, sentence-aware breaks) that a by-product SRT from this script did not,
-and keeping it separate avoids leaving two competing caption files in the folder.
+Captions are not produced here. They come at the end, from the transcript of
+the trimmed video that Step 7 below produces -- keep that transcript.
 
 Originals are never modified, and nothing else is left behind: on exit the
 output folder holds exactly these three files per video and nothing more.
