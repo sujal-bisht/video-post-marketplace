@@ -82,6 +82,78 @@ def overlays_from_xml(xml_path):
     return out
 
 
+def picture_source(xml_path):
+    """What V1 plays: one media file, and the timeline's pieces of it.
+
+    Returns (media path, [(timeline start, timeline end, source in)], fps) in
+    seconds. With a trimmed file the pieces simply follow on from each other;
+    with the original footage each piece reads from where it sat in the raw
+    recording.
+    """
+    import sync_check
+    clips, fps = sync_check.read_video_clips(xml_path, 1)
+    if not clips:
+        raise SystemExit("The timeline has no clips on V1.")
+    media = {c["media"] for c in clips}
+    if len(media) != 1:
+        raise SystemExit("V1 plays more than one file (%s); the final render expects one camera."
+                         % ", ".join(sorted(os.path.basename(m) for m in media)))
+    segs = [(c["start"] / fps, c["end"] / fps, c["in"] / fps) for c in clips]
+    return media.pop(), sorted(segs), fps
+
+
+def audio_source(xml_path):
+    """The file the timeline's audio plays (the cut wav), or None."""
+    root = ET.parse(xml_path).getroot()
+    files = {f.get("id"): _path_from_url(f.findtext("pathurl"))
+             for f in root.iter("file") if f.findtext("pathurl")}
+    seq = root.find("sequence")
+    for track in seq.findall("media/audio/track"):
+        for ci in track.findall("clipitem"):
+            fe = ci.find("file")
+            if fe is not None and fe.get("id") in files and os.path.isfile(files[fe.get("id")]):
+                return files[fe.get("id")]
+    return None
+
+
+def timeline_to_source(segs, t):
+    """Where timeline time t reads from in the V1 media."""
+    for start, end, src_in in segs:
+        if start <= t < end:
+            return src_in + (t - start)
+    start, end, src_in = segs[-1]
+    return src_in + (min(t, end) - start)
+
+
+def cut_graph(segs, fps, src="0:v", out="cut"):
+    """Filter-graph lines that play only the timeline's pieces of the source.
+
+    None when V1 already plays its media straight through (a trimmed file).
+
+    One trim per piece, then one concat. A single select() listing every piece
+    was tried first and is shorter to write, but a 6-minute phone video has
+    300+ pieces and ffmpeg ran out of memory just parsing that expression. Many
+    small filters are fine: this is how the rough cut has always rendered, and
+    the decoder still runs once, feeding every trim.
+
+    Frame-exact: each piece keeps the frames from in - half a frame up to
+    out - half a frame, which is exactly the frames the timeline's integer
+    frame counts describe, whatever rounding the seconds picked up on the way.
+    """
+    half = 0.5 / fps
+    straight = all(abs(s - i) < half for s, e, i in segs) and all(
+        abs(segs[k][0] - segs[k - 1][1]) < half for k in range(1, len(segs)))
+    if straight:
+        return None
+    lines = ["[%s]split=%d%s" % (src, len(segs), "".join("[p%d]" % k for k in range(len(segs))))]
+    for k, (s, e, i) in enumerate(segs):
+        lines.append("[p%d]trim=start=%.6f:end=%.6f,setpts=PTS-STARTPTS[q%d]"
+                     % (k, max(0.0, i - half), i + (e - s) - half, k))
+    lines.append("%sconcat=n=%d:v=1:a=0[%s]"
+                 % ("".join("[q%d]" % k for k in range(len(segs))), len(segs), out))
+    return lines
+
+
 def zoom_curve(xml_path):
     """The zoom as (time, percent) points, and the spans where it is above 100%.
 
@@ -129,22 +201,36 @@ def zoom_filter(xml_path, fps):
     if not spans:
         return None
     t = "(in/%.6f)" % fps          # perspective counts frames; it has no clock
-    expr = "100"
-    for (t1, v1), (t2, v2) in reversed(list(zip(pts, pts[1:]))):
-        if t2 <= t1:
+    # ONE FILTER PER ZOOM, not one for the whole video. A single expression
+    # covering every keyframe broke twice on a 4-minute video with 13 zooms:
+    # written as nested if()s it was 175 deep and ffmpeg refused it ("Invalid
+    # argument"); written as a flat sum it was 130,000 characters and ffmpeg
+    # ran out of memory evaluating it. Each zoom on its own is a dozen
+    # keyframes, switched on only for its own few seconds, and a filter that is
+    # switched off passes frames through for free.
+    parts = []
+    for s0, s1 in spans:
+        terms = []
+        for (t1, v1), (t2, v2) in zip(pts, pts[1:]):
+            if t2 <= t1 or t2 < s0 - 1e-6 or t1 > s1 + 1e-6:
+                continue
+            if abs(v1 - 100.0) < 0.001 and abs(v2 - 100.0) < 0.001:
+                continue
+            terms.append("gte(%s,%.4f)*lt(%s,%.4f)*(%.4f+(%.4f)*(%s-%.4f)/%.4f)"
+                         % (t, t1, t, t2, v1 - 100.0, v2 - v1, t, t1, t2 - t1))
+        if not terms:
             continue
-        seg = "%.4f+(%.4f)*(%s-%.4f)/%.4f" % (v1, v2 - v1, t, t1, t2 - t1)
-        expr = "if(between(%s,%.4f,%.4f),%s,%s)" % (t, t1, t2, seg, expr)
-    inset = "(1-100/(%s))/2" % expr
-    corners = {"x0": "W*%s" % inset, "y0": "H*%s" % inset,
-               "x1": "W-W*%s" % inset, "y1": "H*%s" % inset,
-               "x2": "W*%s" % inset, "y2": "H-H*%s" % inset,
-               "x3": "W-W*%s" % inset, "y3": "H-H*%s" % inset}
-    enable = "+".join("between(t,%.3f,%.3f)" % s for s in spans)
-    # Linear, not cubic: at a 10% push the two are indistinguishable in motion,
-    # and linear costs noticeably less on every zoomed frame.
-    return ("perspective=" + ":".join("%s='%s'" % kv for kv in corners.items())
-            + ":interpolation=linear:eval=frame:enable='%s'" % enable)
+        inset = "(1-100/(100+%s))/2" % "+".join(terms)
+        corners = (("x0", "W*%s" % inset), ("y0", "H*%s" % inset),
+                   ("x1", "W-W*%s" % inset), ("y1", "H*%s" % inset),
+                   ("x2", "W*%s" % inset), ("y2", "H-H*%s" % inset),
+                   ("x3", "W-W*%s" % inset), ("y3", "H-H*%s" % inset))
+        # Linear, not cubic: at a 10% push the two are indistinguishable in
+        # motion, and linear costs noticeably less on every zoomed frame.
+        parts.append("perspective=" + ":".join("%s='%s'" % kv for kv in corners)
+                     + ":interpolation=linear:eval=frame:enable='between(t,%.3f,%.3f)'"
+                     % (s0, s1))
+    return ",".join(parts) or None
 
 
 # Short-form platforms -- Instagram, TikTok, LinkedIn, YouTube Shorts -- cap
@@ -184,33 +270,81 @@ def _stage(ass_path, fonts):
 
 def render_final(base_video, xml_path, out_path, ass_path=None, fonts=None,
                  crf=20, preset="veryfast", full_resolution=False):
-    """One pass: cut video, zooms, overlays, captions. Returns the ffmpeg log.
+    """One pass: cut, zooms, overlays, captions. Returns the ffmpeg log.
 
-    Scaled down FIRST when the source is bigger than the post size, so the zoom,
-    the overlays and the captions all work on the smaller frame rather than
-    being done at 4K and thrown away. The caption script is written in the
-    timeline's own coordinates and libass rescales it to whatever it draws on,
-    so the same captions come out in the same place at any size.
+    Reads the picture from whatever V1 plays -- the original footage, cut on the
+    fly, or a trimmed file -- and the sound from the timeline's own audio (the
+    cut wav). `base_video` is only a fallback for timelines with no audio track.
+
+    Scaled down FIRST, right after the cut, so the zoom, the overlays and the
+    captions all work on the post-size frame instead of on 4K. The caption
+    script is written in the timeline's own coordinates and libass rescales it
+    to whatever it draws on, so captions land in the same place at any size.
+
+    The whole graph goes to ffmpeg as a file, not on the command line: with a
+    few hundred cuts it is far longer than Windows lets a command be.
     """
     fps, w, h, dur = timeline_shape(xml_path)
     ow, oh = output_size(w, h, full_resolution)
+    media = picture_source(xml_path)[0]
+    import hwdecode
+    hw_args, head = hwdecode.choose(os.path.abspath(media), ow, oh)
+    try:
+        return _render_final(base_video, xml_path, out_path, ass_path, fonts, crf, preset,
+                             full_resolution, hw_args, head)
+    except SystemExit:
+        if not hw_args:
+            raise
+        # The GPU path is only ever an optimisation. If it fails on this
+        # footage, the software path renders the same thing, just slower.
+        print("GPU decoding failed on this video; rendering in software instead.")
+        return _render_final(base_video, xml_path, out_path, ass_path, fonts, crf, preset,
+                             full_resolution, [], None)
+
+
+def _render_final(base_video, xml_path, out_path, ass_path, fonts, crf, preset,
+                  full_resolution, hw_args, head):
+    fps, w, h, dur = timeline_shape(xml_path)
+    ow, oh = output_size(w, h, full_resolution)
+    if head is None:
+        head = "scale=%d:%d:flags=lanczos" % (ow, oh) if (ow, oh) != (w, h) else "null"
+    media, segs, _ = picture_source(xml_path)
+    sound = audio_source(xml_path)
     work = _stage(ass_path, fonts)
     try:
-        cmd = ["ffmpeg", "-y", "-v", "verbose", "-i", os.path.abspath(base_video)]
+        cmd = ["ffmpeg", "-y", "-v", "verbose"] + list(hw_args) + ["-i", os.path.abspath(media)]
+        if sound:
+            cmd += ["-i", os.path.abspath(sound)]
+            audio_map = "1:a"
+        else:
+            cmd += ["-i", os.path.abspath(base_video)]
+            audio_map = "1:a?"
         overlays = overlays_from_xml(xml_path)
         for o in overlays:
             cmd += ["-i", os.path.abspath(o["path"])]
 
-        chain = []
-        base = "[0:v]"
-        if (ow, oh) != (w, h):
-            chain.append("[0:v]scale=%d:%d:flags=lanczos[vs]" % (ow, oh))
-            base = "[vs]"
+        # CUT FIRST, THEN SCALE -- on the GPU too. The cut has to read the
+        # camera's own timestamps, and the GPU scaler does not keep them: it
+        # re-stamps every frame on a perfectly regular clock, and phone footage
+        # is not perfectly regular. Scaled first, the cut drifted a frame off
+        # the timeline (found frame by frame against the old render: 2 frames
+        # short in 20 pieces). Cut first, it matched every frame. Cutting first
+        # also means the footage that was cut out is never scaled at all.
+        chain, pre = [], []
+        src = "0:v"
+        if head != "null":
+            pre.append(head)
+        cut = cut_graph(segs, fps, src=src)
+        if cut:
+            chain.extend(cut)
+            src = "cut"
         z = zoom_filter(xml_path, fps)
-        chain.append("%s%s[v0]" % (base, z or "null"))
+        if z:
+            pre.append(z)
+        chain.append("[%s]%s[v0]" % (src, ",".join(pre) or "null"))
 
         last = "v0"
-        for i, o in enumerate(overlays, start=1):
+        for i, o in enumerate(overlays, start=2):
             length = o["end"] - o["start"]
             chain.append("[%d:v]trim=start=%.4f:duration=%.4f,setpts=PTS-STARTPTS+%.4f/TB,"
                          "scale=%d:%d[o%d]" % (i, o["in"], length, o["start"], ow, oh, i))
@@ -223,10 +357,12 @@ def render_final(base_video, xml_path, out_path, ass_path=None, fonts=None,
         else:
             chain.append("[%s]null[vout]" % last)
 
-        cmd += ["-filter_complex", ";".join(chain), "-map", "[vout]", "-map", "0:a?",
+        with open(os.path.join(work, "graph.txt"), "w", encoding="utf-8") as f:
+            f.write(";\n".join(chain))
+        cmd += ["-filter_complex_script", "graph.txt", "-map", "[vout]", "-map", audio_map,
                 "-c:v", "libx264", "-preset", preset, "-crf", str(crf), "-pix_fmt", "yuv420p",
                 "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart",
-                os.path.abspath(out_path)]
+                "-t", "%.3f" % dur, os.path.abspath(out_path)]
         return _run(cmd, work)
     finally:
         shutil.rmtree(work, ignore_errors=True)

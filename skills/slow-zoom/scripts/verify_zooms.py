@@ -35,22 +35,54 @@ def fmt(t):
 
 
 def zoom_spans(per_clip, fps):
-    """Group clips carrying keyframes into the gestures they belong to."""
-    spans, current = [], None
+    """Group clips carrying keyframes into the gestures they belong to.
+
+    A gesture is one zoom: from the last 100% keyframe before the curve rises
+    to the first 100% keyframe after it comes back down. It used to be a run of
+    neighbouring clips that carry keyframes, which is the same thing only while
+    every clip is shorter than the gap between zooms. A tightly spoken lesson
+    has long clips: one clip carried two zooms, five zooms read as ONE zoom
+    covering 81% of the runtime, and a correct timeline failed as "too busy".
+    """
+    runs, current = [], None
     for c in per_clip:
         if c["keys"]:
-            if current and abs(c["start"] - current["end"]) < 1.5 / fps:
-                current["end"] = c["end"]
-                current["clips"].append(c)
+            if current and abs(c["start"] - current[-1]["end"]) < 1.5 / fps:
+                current.append(c)
             else:
                 if current:
-                    spans.append(current)
-                current = {"start": c["start"], "end": c["end"], "clips": [c]}
+                    runs.append(current)
+                current = [c]
         elif current:
-            spans.append(current)
+            runs.append(current)
             current = None
     if current:
-        spans.append(current)
+        runs.append(current)
+
+    eps = 0.5 / fps
+    spans = []
+    for run in runs:
+        keys = sorted(k for c in run for k in c["keys"])
+        i = 0
+        while i < len(keys):
+            if keys[i][1] <= 100.01:
+                i += 1
+                continue
+            lo = keys[i - 1][0] if i > 0 else keys[i][0]
+            j = i
+            while j < len(keys) and keys[j][1] > 100.01:
+                j += 1
+            hi = keys[j][0] if j < len(keys) else keys[-1][0]
+            if j >= len(keys):
+                # held to the end of the run: it finishes on a real jump
+                hi = max(hi, run[-1]["end"])
+            clips = []
+            for c in run:
+                if c["end"] <= lo + eps or c["start"] >= hi - eps:
+                    continue
+                clips.append(dict(c, keys=[k for k in c["keys"] if lo - eps <= k[0] <= hi + eps]))
+            spans.append({"start": lo, "end": hi, "clips": clips})
+            i = j + 1
     return spans
 
 

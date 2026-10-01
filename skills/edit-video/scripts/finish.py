@@ -42,7 +42,12 @@ except ImportError as exc:  # pragma: no cover
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("timeline_xml")
-    ap.add_argument("--video", required=True, help="The media V1 plays: <name>_trimmed.mp4")
+    ap.add_argument("--video", help="Not needed: the picture is read from whatever the "
+                    "timeline's V1 plays (the linked original, or a trimmed file). Kept so "
+                    "older commands still run.")
+    ap.add_argument("--zooms", help="zooms.json chosen from prepare.py's candidates. Applied "
+                    "to the timeline and verified before rendering, so the whole finish is one "
+                    "command.")
     ap.add_argument("--transcript", help="Transcript of that same video, for the captions.")
     ap.add_argument("--no-captions", action="store_true",
                     help="Only when the user asked for no captions.")
@@ -65,8 +70,13 @@ def main():
     xml = os.path.abspath(args.timeline_xml)
     out_dir = os.path.dirname(xml)
     name = Path(xml).stem
+    if args.zooms:
+        _run_zoom_step("apply_zooms.py", [xml, os.path.abspath(args.zooms)])
+        _run_zoom_step("verify_zooms.py", [xml])
     fps, w, h, dur = F.timeline_shape(xml)
-    print("Timeline %s: %dx%d, %.2f fps, %.1fs" % (name, w, h, fps, dur))
+    media_path, segs, _ = F.picture_source(xml)
+    print("Timeline %s: %dx%d, %.2f fps, %.1fs, playing %s"
+          % (name, w, h, fps, dur, os.path.basename(media_path)))
 
     ass_path, fonts, template = None, None, None
     if not args.no_captions:
@@ -114,9 +124,10 @@ def main():
                 return 2
             pts, _ = F.zoom_curve(xml)
             end = min(H.HOOK_SECONDS, dur)
-            hook_events, rep = H.plan(args.hook, args.video, w, h, fonts,
+            hook_events, rep = H.plan(args.hook, media_path, w, h, fonts,
                                       C.parse_hex(profile["colour"]), caption_template=template,
-                                      zoom_at=lambda t: _zoom_at(pts, t), start=0.0, end=end)
+                                      zoom_at=lambda t: _zoom_at(pts, t), start=0.0, end=end,
+                                      time_map=lambda t: F.timeline_to_source(segs, t))
             print("Hook: %s, at %.0f%% of the height, %d line(s): %s"
                   % (rep["where"], rep["y_share"] * 100, len(rep["lines"]),
                      " / ".join(rep["lines"])))
@@ -136,9 +147,29 @@ def main():
             f.write(io.open(ass_path, encoding="utf-8").read().rstrip("\n") + "\n"
                     + "\n".join(hook_events) + "\n")
 
-    final = os.path.join(out_dir, "%s_final.mp4" % name)
+    # The editor layers (captions alone, hook alone) are rendered AT THE SAME
+    # TIME as the final, not after it. They are mostly empty frames, cheap on
+    # the processor but slow end to end: on a 4-minute 4K timeline the caption
+    # layer alone took 6 minutes, waiting in line behind the final.
+    media_dir = os.path.join(out_dir, "%s_media" % name)
+    layers = []
+    if ass_path and not args.no_caption_track:
+        layers.append(("captions", ass_path, os.path.join(media_dir, "%s_captions.mov" % name),
+                       0.0, dur))
+    if hook_ass and not args.no_caption_track:
+        end = min(H.HOOK_SECONDS, dur)
+        layers.append(("hook", hook_ass, os.path.join(media_dir, "%s_hook.mov" % name), 0.0, end))
+    if layers:
+        os.makedirs(media_dir, exist_ok=True)
+    from concurrent.futures import ThreadPoolExecutor
+    pool = ThreadPoolExecutor(max_workers=max(1, len(layers)))
     t0 = time.time()
-    log = F.render_final(args.video, xml, final, ass_path=burn_ass, fonts=fonts,
+    jobs = [(kind, mov, a, b, pool.submit(F.render_caption_layer, script, fonts, mov, w, h, fps,
+                                          b - a))
+            for kind, script, mov, a, b in layers]
+
+    final = os.path.join(out_dir, "%s_final.mp4" % name)
+    log = F.render_final(args.video or media_path, xml, final, ass_path=burn_ass, fonts=fonts,
                          full_resolution=args.full_resolution)
     ow, oh = F.output_size(w, h, args.full_resolution)
     print("Rendered %s at %dx%d in %.0fs" % (os.path.basename(final), ow, oh, time.time() - t0))
@@ -150,22 +181,15 @@ def main():
         print("  font check: %s  %s" % ("PASS" if good else "FAIL", msg))
         ok &= good
 
-        if ass_path and not args.no_caption_track:
-            mov = os.path.join(out_dir, "%s_media" % name, "%s_captions.mov" % name)
-            t1 = time.time()
-            F.render_caption_layer(ass_path, fonts, mov, w, h, fps, dur)
+    for kind, mov, a, b, job in jobs:
+        job.result()
+        if kind == "captions":
             F.add_caption_track(xml, mov, w, h)
-            print("Caption track added to the timeline in %.0fs (%s)"
-                  % (time.time() - t1, os.path.relpath(mov, out_dir)))
-
-    if hook_ass and not args.no_caption_track:
-        media = os.path.join(out_dir, "%s_media" % name)
-        os.makedirs(media, exist_ok=True)
-        mov = os.path.join(media, "%s_hook.mov" % name)
-        end = min(H.HOOK_SECONDS, dur)
-        F.render_caption_layer(hook_ass, fonts, mov, w, h, fps, end)
-        F.add_layer_track(xml, mov, w, h, "hook", 0.0, end)
-        print("Hook track added to the timeline (%s)" % os.path.relpath(mov, out_dir))
+        else:
+            F.add_layer_track(xml, mov, w, h, kind, a, b)
+        print("%s track added to the timeline (%s); all layers done %.0fs after the start"
+              % (kind.capitalize(), os.path.relpath(mov, out_dir), time.time() - t0))
+    pool.shutdown()
 
     print()
     print("Post this one:  %s" % final)
@@ -173,6 +197,19 @@ def main():
         print("\nThe brand font was NOT what ffmpeg drew. Do not hand this over.")
         return 1
     return 0
+
+
+def _run_zoom_step(script, argv):
+    """Run one slow-zoom script and stop the finish if it fails."""
+    import subprocess
+    here = Path(__file__).resolve().parent
+    for cand in (here.parents[1] / "slow-zoom" / "scripts" / script, here / script):
+        if cand.is_file():
+            r = subprocess.run([sys.executable, str(cand)] + argv)
+            if r.returncode != 0:
+                raise SystemExit("%s failed -- fix the zoom plan before rendering." % script)
+            return
+    raise SystemExit("Cannot find the slow-zoom skill's %s." % script)
 
 
 def _zoom_at(pts, t):

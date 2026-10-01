@@ -248,7 +248,7 @@ def standalone_ass(width, height, event_lines):
 
 
 def plan(text, video, width, height, fonts, brand_rgb, caption_template=None,
-         zoom_at=lambda t: 100.0, start=0.0, end=HOOK_SECONDS, draw_span=None):
+         zoom_at=lambda t: 100.0, start=0.0, end=HOOK_SECONDS, draw_span=None, time_map=None):
     """Lay out and place the hook. Returns (event_lines, report dict).
 
     Faces are looked for between `start` and `end` of `video`. The events are
@@ -261,7 +261,8 @@ def plan(text, video, width, height, fonts, brand_rgb, caption_template=None,
     import faces as F
     probe_w = 540
     probe_h = int(round(height * probe_w / float(width) / 2)) * 2
-    seen = F.faces_over(video, start, end, samples=6, width=probe_w, height=probe_h)
+    seen = F.faces_over(video, start, end, samples=6, width=probe_w, height=probe_h,
+                        time_map=time_map)
     s = width / float(probe_w)
     seen = {t: [(b[0] * s, b[1] * s, b[2] * s, b[3] * s, b[4]) for b in boxes]
             for t, boxes in seen.items()}

@@ -176,47 +176,127 @@ def extract_audio(source_video, keep_segments, out_path):
     WAV rather than a compressed sidecar: it is universally readable, and 30 MB
     is nothing beside the overlays.
     """
-    filters, joins = [], []
-    for i, seg in enumerate(keep_segments):
-        filters.append("[0:a]atrim=start=%.6f:end=%.6f,asetpts=PTS-STARTPTS[a%d]"
-                       % (seg["start"], seg["end"], i))
-        joins.append("[a%d]" % i)
-    graph = ";".join(filters) + ";%sconcat=n=%d:v=0:a=1[out]" % ("".join(joins), len(keep_segments))
-    subprocess.run(["ffmpeg", "-y", "-i", source_video, "-filter_complex", graph,
-                    "-map", "[out]", "-c:a", "pcm_s16le", out_path],
-                   check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    # Extract the whole soundtrack once, then cut it here by sample position.
+    # Doing the cut in ffmpeg meant one atrim per kept piece -- 300+ on a
+    # 6-minute video -- and took about a minute for what is only audio. Sample
+    # arithmetic is exact and takes a second or two.
+    import tempfile
+    import wave
+    fd, full = tempfile.mkstemp(prefix="vp-audio-", suffix=".wav")
+    os.close(fd)
+    try:
+        subprocess.run(["ffmpeg", "-y", "-i", source_video, "-vn", "-c:a", "pcm_s16le", full],
+                       check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        with wave.open(full, "rb") as src, wave.open(out_path, "wb") as dst:
+            dst.setparams(src.getparams())
+            rate, total = src.getframerate(), src.getnframes()
+            for seg in keep_segments:
+                a = min(total, int(round(seg["start"] * rate)))
+                b = min(total, int(round(seg["end"] * rate)))
+                if b > a:
+                    src.setpos(a)
+                    dst.writeframes(src.readframes(b - a))
+    finally:
+        try:
+            os.remove(full)
+        except OSError:
+            pass
 
 
-def render_trimmed_video(source, keep_segments, out_path):
+class _graph_file(object):
+    """A filter graph written to a file and handed to ffmpeg by path.
+
+    Passed inline, the graph is one argument on the command line, and it grows
+    with every cut: a 6-minute phone video with 300+ pauses made a command
+    longer than Windows allows (32,767 characters), and the render died with
+    "The filename or extension is too long" before ffmpeg even started.
+    """
+
+    def __init__(self, graph):
+        import tempfile
+        fd, self.path = tempfile.mkstemp(prefix="vp-graph-", suffix=".txt")
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(graph)
+
+    def __enter__(self):
+        return self.path
+
+    def __exit__(self, *exc):
+        try:
+            os.remove(self.path)
+        except OSError:
+            pass
+
+
+def render_trimmed_video(source, keep_segments, out_path, audio_path, fps, width, height):
+    """The cut as one video file, at the source's own size.
+
+    Built the way the final render is: one trim per kept piece on the camera's
+    own timestamps, decoded on the GPU when that was measured to be faster
+    (lib/hwdecode.py), the sound taken from the cut wav rather than cut a second
+    time. The old version cut picture and sound in one graph and encoded with
+    x264's "medium" preset: on a 6-minute 4K phone video that single step took
+    28 minutes. "veryfast" at a slightly lower CRF keeps the same look at a
+    fraction of the time; the file is somewhat larger.
+    """
     if not keep_segments:
         raise SystemExit("No footage left after applying cuts -- refusing to render an empty video.")
+    import final_render
+    import hwdecode
+    hw_args, head = hwdecode.choose(os.path.abspath(source), width, height)
+    segs, t = [], 0.0
+    for seg in keep_segments:
+        length = seg["end"] - seg["start"]
+        segs.append((t, t + length, seg["start"]))
+        t += length
+    lines = final_render.cut_graph(segs, fps) or ["[0:v]null[cut]"]
+    tail = head if hw_args else "null"
+    lines.append("[cut]%s[vout]" % tail)
 
-    filter_parts = []
-    concat_v = []
-    concat_a = []
-    for i, seg in enumerate(keep_segments):
-        filter_parts.append(
-            f"[0:v]trim=start={seg['start']:.6f}:end={seg['end']:.6f},setpts=PTS-STARTPTS[v{i}]"
-        )
-        filter_parts.append(
-            f"[0:a]atrim=start={seg['start']:.6f}:end={seg['end']:.6f},asetpts=PTS-STARTPTS[a{i}]"
-        )
-        concat_v.append(f"[v{i}]")
-        concat_a.append(f"[a{i}]")
+    def run(args, graph_lines):
+        with _graph_file(";\n".join(graph_lines)) as script:
+            cmd = (["ffmpeg", "-y", "-v", "error"] + list(args) +
+                   ["-i", source, "-i", audio_path, "-filter_complex_script", script,
+                    "-map", "[vout]", "-map", "1:a",
+                    "-c:v", "libx264", "-preset", "veryfast", "-crf", "17", "-pix_fmt", "yuv420p",
+                    "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart", out_path])
+            return subprocess.run(cmd).returncode
 
-    n = len(keep_segments)
-    concat_inputs = "".join(f"{v}{a}" for v, a in zip(concat_v, concat_a))
-    filter_complex = ";".join(filter_parts) + f";{concat_inputs}concat=n={n}:v=1:a=1[vout][aout]"
+    if run(hw_args, lines) != 0:
+        if not hw_args:
+            raise SystemExit("Rendering the trimmed video failed.")
+        print("GPU decoding failed on this video; rendering the trimmed copy in software.")
+        lines[-1] = "[cut]null[vout]"
+        if run([], lines) != 0:
+            raise SystemExit("Rendering the trimmed video failed.")
 
-    cmd = [
-        "ffmpeg", "-y", "-i", source,
-        "-filter_complex", filter_complex,
-        "-map", "[vout]", "-map", "[aout]",
-        "-c:v", "libx264", "-preset", "medium", "-crf", "18",
-        "-c:a", "aac", "-b:a", "192k",
-        out_path,
-    ]
-    subprocess.run(cmd, check=True)
+
+def _link_original(source, output_dir, basename):
+    """Put the original footage in the output folder without copying it, if possible.
+
+    A hard link is a second name for the same file: instant, and no extra disk
+    space. It only works on the same drive; otherwise this falls back to a copy,
+    which is still far faster than re-encoding. Either way the folder stays
+    self-contained, which is what the editors need to find the media.
+    """
+    ext = os.path.splitext(source)[1] or ".mp4"
+    dest = os.path.join(output_dir, "%s_original%s" % (basename, ext))
+    src = os.path.abspath(source)
+    if os.path.exists(dest):
+        try:
+            if os.path.samefile(src, dest):
+                return dest
+        except OSError:
+            pass
+        os.remove(dest)
+    try:
+        os.link(src, dest)
+        how = "linked (no copy, no extra space)"
+    except OSError:
+        shutil.copy2(src, dest)
+        how = "copied (the original is on another drive)"
+    print("Original footage %s into the output folder as %s" % (how, os.path.basename(dest)))
+    return dest
 
 
 def report_summary(applied_cuts, duration, keep_segments):
@@ -308,6 +388,13 @@ def main():
                          "that was removed. The cost is that the original lives outside the "
                          "output folder, so the editor will not find it unless the user adds "
                          "that folder as a search location on import.")
+    ap.add_argument("--no-trimmed-video", action="store_true",
+                    help="Do not render <name>_trimmed.mp4. The timeline plays the ORIGINAL "
+                         "footage instead, linked into the output folder as "
+                         "<name>_original.<ext> so the folder stays self-contained. Used by "
+                         "edit-video, whose final render reads the original directly: "
+                         "re-encoding a 4K phone video only to cut it was the slowest step in "
+                         "the whole edit, and it cost picture quality besides.")
     ap.add_argument("--keep-intermediates", action="store_true",
                     help="Leave transcripts/cutlists/snippets in the output folder. Off by "
                          "default: the output folder should contain only what the user needs.")
@@ -345,8 +432,6 @@ def main():
     # a real sample rate the audio imports offline.
     audio_rate = int(audio_stream.get("sample_rate", 48000)) if audio_stream else 48000
 
-    render_trimmed_video(args.source_video, keep_segments, trimmed_path)
-
     # Everything the XML points at lives in this folder, because the editor
     # locates media by searching the XML's own directory -- not by the absolute
     # paths in the file. Referencing footage kept elsewhere is what made an
@@ -354,12 +439,22 @@ def main():
     audio_path = os.path.join(args.output_dir, "%s_audio.wav" % basename)
     extract_audio(args.source_video, keep_segments, audio_path)
 
+    if args.no_trimmed_video:
+        trimmed_path = _link_original(args.source_video, args.output_dir, basename)
+    else:
+        render_trimmed_video(args.source_video, keep_segments, trimmed_path, audio_path,
+                             float(fps), width, height)
+
     # Picture and sound have to be read off the same clock. The trimmed file and
     # the wav both already contain only the kept segments, so a clip on them
     # reads from its own timeline position; the original still holds everything,
     # so a clip on it reads from where that segment sat in the raw footage.
     reference_original = bool(args.reference_original)
     video_source = os.path.abspath(args.source_video) if reference_original else trimmed_path
+    if args.no_trimmed_video:
+        # The linked original holds everything, so clips read from where each
+        # kept segment sat in the raw footage -- and it sits in this folder.
+        reference_original, video_source = True, trimmed_path
     # Frame-exact stacking: doing this in float seconds drifts a frame per clip.
     clips = contiguous_clips(video_source, keep_segments, fps,
                              pre_trimmed=not reference_original)

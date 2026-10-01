@@ -95,16 +95,20 @@ def _iou(a, b):
     return inter / ua if ua > 0 else 0.0
 
 
-def faces_over(video, start, end, samples=6, width=None, height=None):
+def faces_over(video, start, end, samples=6, width=None, height=None, time_map=None):
     """Faces seen across a stretch of video, as {time: [boxes]}.
 
     Sampled, not one frame: people move, and a box that was clear of the face
     at the first frame can sit on it two seconds later.
+
+    `time_map` turns a timeline time into a time in `video`, for a timeline
+    that plays pieces of the original footage. The results stay keyed by
+    timeline time.
     """
     out = {}
     for i in range(samples):
         t = start + (end - start) * (i + 0.5) / samples
-        f = frame_at(video, t, width, height)
+        f = frame_at(video, time_map(t) if time_map else t, width, height)
         if f is not None:
             out[t] = detect(f)
     return out

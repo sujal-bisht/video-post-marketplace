@@ -208,6 +208,13 @@ python scripts/render_cuts.py <video> <transcript.json> <output_dir> \
 ```
 
 Cut boundaries are applied exactly as given -- this script adds no padding.
+
+`--no-trimmed-video` skips the trimmed render: the timeline plays the original
+footage instead, linked into the output folder as `<name>_original.<ext>` (no
+copy, no extra disk space, when it is on the same drive). `edit-video` always
+uses it, because its final reads the original directly; re-encoding a 4K phone
+video only to cut it once took 28 minutes. Use it here too when the user will
+edit in Premiere or Resolve rather than post the trimmed file as it is.
 Outputs to `<output_dir>` (default: a `trimmed_output/` folder beside the
 input):
 

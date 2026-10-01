@@ -120,6 +120,11 @@ def read_timeline(xml_path):
     covered = []
     for track in tracks[1:]:
         for ci in track.findall("clipitem"):
+            # The caption and hook layers are transparent text over the camera,
+            # not slides hiding it. Counting them as covers made a second run
+            # of the finish refuse every zoom as "under a slide".
+            if (ci.get("id") or "").startswith(("captions-", "hook-")):
+                continue
             covered.append((int(ci.findtext("start")) / fps,
                             int(ci.findtext("end")) / fps))
     covered = _merge(covered)

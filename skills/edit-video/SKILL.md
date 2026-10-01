@@ -182,6 +182,13 @@ ready by then, so it is one round of questions, not two.
 
 Whatever they choose goes in exactly as they wrote or picked it.
 
+**In the same reading, decide the speech cuts.** You are reading the whole
+transcript for the hooks anyway, so this is also when the restarts, fumbles
+and repeated takes get picked out, by `rough-cut` Step 5's rules -- check
+`suspect_words` first, keep deliberate repetition. Write them to
+`<scratch>/cutlist_speech.json` before the user has even answered. One reading
+of the transcript, not two.
+
 ### 1d. Show them their hook, then go
 
 As soon as the hook is chosen, render it on their video:
@@ -204,24 +211,47 @@ having already seen their video, in their brand, looking finished.
 
 **Now stop asking, and start working.**
 
-## Step 2: the edit, in this order
+## Step 2: the edit -- two commands
 
-The order matters. Each step writes into the same timeline, and the later ones
-read what the earlier ones made.
+The judgments are already made (speech cuts in Step 1c, the rest below); what
+is left is machine work, and it runs as two commands, not a step at a time. A
+4-minute video once took 28 minutes, and a third of that was not the computer
+working but round trips: 68 separate steps where nine would have done.
 
-1. **Rough cut** -- follow the `rough-cut` skill end to end, reusing the
-   transcript from Step 1, including its verification with `--xml`. It leaves
-   `<name>_trimmed.mp4`, `<name>.xml` and `<name>_audio.wav`, plus a transcript of the trimmed video from its verify
-   step. Keep that transcript: the zooms and the captions both need it.
-2. **Slides and cutout** -- only if asked for, with assets. Follow `slide-cutout`.
-3. **Slow zoom** -- follow `slow-zoom`, after the slides so no zoom hides under
-   one. It adapts to length on its own: short-form gets shorter, closer moves.
-4. **Finish** -- captions, the hook and the post-ready video:
+**1. Prepare** -- the cut, its check, and the zoom candidates:
 
 ```bash
-python scripts/finish.py <out>/<name>.xml --video <out>/<name>_trimmed.mp4 \
-    --transcript <scratch>/trimmed_transcript.json --hook "<the hook they chose>"
+python scripts/prepare.py <their video> --transcript <scratch>/<name>_transcript.json \
+    --speech-cuts <scratch>/cutlist_speech.json --out <output folder> --scratch <scratch>
 ```
+
+It plans the silence cuts, builds the timeline and the cut audio, transcribes
+the cut, verifies it (dead air, timeline sync, leftover restarts), and prints
+the zoom candidates with what is being said in each. **It does not re-encode
+the video**: the original is linked into the output folder and both the
+timeline and the final read it directly. That one change removed the slowest
+step of the whole edit.
+
+Then two judgments, from what it printed:
+
+- **Leftover repeats** under "Checking the cut": a missed restart goes into
+  the speech cutlist and prepare runs again; deliberate repetition stays.
+- **Zooms**: choose from the candidates by the `slow-zoom` skill's rules --
+  keep at least the number it asks for, zoom on the moments that carry weight
+  -- and write `<scratch>/zooms.json`.
+
+**2. Finish** -- zooms applied and verified, captions, hook, the final video:
+
+```bash
+python scripts/finish.py <output folder>/<name>.xml \
+    --transcript <scratch>/<name>_cut_transcript.json \
+    --zooms <scratch>/zooms.json --hook "<the hook they chose>"
+```
+
+**Slides change the order.** Only when the user asked for slides and gave the
+images: run prepare with `--slides` (it then also makes the trimmed copy the
+cutout is rendered from, and leaves out the zoom candidates), follow
+`slide-cutout`, then `slow-zoom`, then finish without `--zooms`.
 
 `finish.py` renders the whole edit in one pass, and checks ffmpeg's own log to
 prove the brand font was drawn. If it prints FAIL, do not hand the video over.
@@ -240,7 +270,7 @@ running underneath it.
 |---|---|
 | `<name>_final.mp4` | **The one to post.** Cut, zoomed, captioned. No editing software needed. |
 | `<name>.xml` | The editable timeline for Premiere or Resolve: every cut, zoom and slide as its own clip, captions on their own track, the hook on its own track above that |
-| `<name>_trimmed.mp4`, `<name>_audio.wav`, `<name>_media/` | What the timeline plays. Not for posting |
+| `<name>_original.<ext>`, `<name>_audio.wav`, `<name>_media/` | What the timeline plays: the original footage (linked, not copied, when it is on the same drive -- no extra disk space), the cut sound, the caption and hook layers. Not for posting |
 
 Say it in that order, and say: **keep everything in this folder together.**
 Editors find media by searching the folder they import from, so a file that
@@ -275,3 +305,21 @@ rendering 4K for them is time thrown away. If the user needs a full-size file
 6. **Previews that looked worse than the real thing.** Shrinking and
    compressing red text smeared it into a ghost beside the letters. The still
    preview is now drawn straight to PNG.
+7. **28 minutes to cut one video.** On a 6-minute 4K phone clip, the rough
+   cut re-encoded the whole video at full resolution before anything else could
+   happen -- longer than every other step together. The edit no longer
+   re-encodes to cut: the original is linked into the output folder, the
+   timeline plays it, and the final reads it directly. Same clip, whole edit:
+   about 6 minutes of machine time.
+8. **Long videos crashed in three places.** Each worked on short tests and
+   broke on a 6-minute video with 300+ cuts: the cut list passed on the
+   command line was longer than Windows allows; the zoom written as one nested
+   formula was too deep for ffmpeg; the cut written as one formula ran ffmpeg
+   out of memory. Graphs now go to ffmpeg as files, each zoom is its own small
+   filter, and each kept piece its own trim.
+9. **The GPU path was one frame off.** Decoding on the graphics chip is
+   measured once per camera and used only when clearly faster and
+   frame-identical (`lib/hwdecode.py`). Its scaler re-stamps frames on a
+   perfectly regular clock, which phone footage is not, so scaling before the
+   cut put the picture a frame early. The cut always runs first, on the
+   camera's own timestamps; checked frame by frame against the original.
