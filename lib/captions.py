@@ -535,6 +535,15 @@ def mask_profanity(word):
 # Placement sits around the neck, below the mouth, in all four. The first
 # version put Impact at mid-frame, which on a head-and-shoulders shot lands on
 # the speaker's lips.
+# The halo behind caption text: (border, blur) as shares of the capital
+# height, and alpha (0 = solid black, 255 = invisible). Tuned by eye on real
+# video, three rounds: one faint layer (alpha 0xB0) read as "not that
+# visible"; two dark layers (0x80 wide + 0x60 edge) put "a lot of black shadow
+# behind the text" and hurt legibility. This is the middle: the wide soft layer
+# back near the original lightness, plus a light edge layer that separates the
+# letters from the picture without a dark cloud.
+HALO = [(0.32, 0.85, 0xA8), (0.10, 0.30, 0x90)]
+
 TEMPLATES = {
     # Tracking tightened on request, but not until letters touch: at -0.04 the
     # O and W of "HOW" met in a lossless close-up. -0.025 keeps it tight and clean.
@@ -683,11 +692,9 @@ def build_ass(words, template, width, height, brand_rgb, text_rgb, fonts,
     # on a real video the white words were "not that visible"; this is about
     # twice the darkness, still with no hard edge.
     halo_layers = [
-        ("{\\bord%.1f\\blur%.1f\\shad0\\1c&H000000&\\3c&H000000&\\1a&H80&\\3a&H80&}"
-         % (cap * 0.42, cap * 0.95)),
-        ("{\\bord%.1f\\blur%.1f\\shad0\\1c&H000000&\\3c&H000000&\\1a&H60&\\3a&H60&}"
-         % (cap * 0.14, cap * 0.38)),
-    ]
+        ("{\\bord%.1f\\blur%.1f\\shad0\\1c&H000000&\\3c&H000000&\\1a&H%02X&\\3a&H%02X&}"
+         % (cap * bord, cap * blur, alpha, alpha))
+        for bord, blur, alpha in HALO]
 
     events = []
     for gi, group in enumerate(groups):

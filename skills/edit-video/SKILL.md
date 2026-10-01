@@ -408,6 +408,8 @@ the user needs a full-size file (a 4K YouTube upload), rerun finish with
     cut and again on the cut. On the DJI test it recovered the dropped "So,"
     and cut it; the cut reads clean on a fresh listen.
 16. **Captions too small and hard to read on a busy frame.** All four styles
-    are 25% bigger, and the halo behind the text is two blurred layers about
-    twice as dark -- still no visible shadow shape.
+    are 25% bigger. The halo went from one faint layer ("not visible") to two
+    dark ones ("a lot of black shadow") and settled in between: a soft wide
+    layer near the original lightness plus a light edge on each letter
+    (`captions.HALO`).
 
