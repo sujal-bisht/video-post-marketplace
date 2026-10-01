@@ -285,11 +285,11 @@ To use the exact track you named in the preview, pass `--music <its path>`
 instead of `--music-mood`; picking by mood twice can choose differently,
 because it avoids the last few tracks used.
 
-**The music** is levelled and ducked from the transcript: about -25 LUFS
-while someone speaks, rising to about -20 LUFS in the opening, real pauses and
-the ending, with a soft fade in and out -- 6-11 dB under the voice, there for
-the feel and never in the way. Looped with a crossfade when the video is
-longer than the track. It is in the final, and on its own two audio tracks in
+**The music** is levelled and ducked from the transcript: about -37 LUFS
+while someone speaks, rising to about -32 LUFS in the opening, real pauses and
+the ending, with a soft fade in and out -- about 23 dB under the voice, with a dip
+in the band where speech is understood, so it is felt rather than heard.
+Looped with a crossfade when the video is longer than the track. It is in the final, and on its own two audio tracks in
 the timeline (`<name>_media/<name>_music.wav`).
 
 **Slides change the order.** Only when the user asked for slides and gave the

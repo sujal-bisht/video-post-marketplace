@@ -14,10 +14,21 @@ numbers get wrong can be corrected in that file and the correction sticks.
 THE MIX
 -------
 Music is for the vibe, never the message. The voice is at -14 LUFS (the sound
-polish puts it there); the music sits around -25 LUFS while someone is
-speaking and rises to about -20 LUFS where nobody is -- the opening seconds,
-real pauses, the ending. That is 6-11 dB under the voice: present, never in
-the way.
+polish puts it there); the music sits around -37 LUFS while someone is
+speaking and rises to about -32 LUFS where nobody is -- the opening seconds,
+real pauses, the ending. That is about 23 dB under the voice.
+
+It started at -25/-20 (11 dB under), which measured exactly as designed and
+was still too loud to watch: on the first two demos the music was "too high,
+especially in the vertical video". 19 dB under is where a bed stops being
+something you listen to and becomes something you only notice when it stops.
+Then 19 dB under was heard and judged still too present ("20-30% lower"):
+-4 dB more, which is roughly what a 25% drop in perceived loudness is.
+
+The music is also EQ'd before it is levelled: a broad 5 dB dip from about 1.5
+to 4 kHz, the band where consonants live and speech is understood. A bright,
+busy track at the same loudness then sits behind the voice instead of next to
+it. Rumble below 60 Hz is cut too; it only muddies a phone speaker.
 
 Ducking is driven by the transcript, not by a compressor listening to the
 voice. The plugin already knows, to the word, when someone speaks, so the
@@ -42,8 +53,9 @@ HISTORY = os.path.join(HOME, "music_history.json")
 STARTER = os.path.join(os.path.dirname(os.path.abspath(__file__)), "music")
 EXTS = (".mp3", ".wav", ".m4a", ".aac", ".flac", ".ogg")
 
-BED_LUFS = -20.0          # music where nobody is speaking
-DUCK_DB = 5.0             # how far it drops under speech: -20 -> -25 LUFS
+BED_LUFS = -32.0          # music where nobody is speaking
+DUCK_DB = 5.0             # how far it drops under speech: -32 -> -37 LUFS
+BED_EQ = "highpass=f=60,equalizer=f=2500:width_type=o:width=1.4:g=-5"
 DUCK_DOWN_S = 0.25        # ramp down before a phrase starts
 DUCK_UP_S = 0.8           # ramp up after it ends -- slower, so it never jumps
 PAUSE_TO_RISE_S = 1.2     # only a pause this long lets the music come up
@@ -64,9 +76,12 @@ MOOD_HELP = {
 
 # ------------------------------------------------------------------ analysis
 
-def _decode(path, rate=22050, channels=1):
-    r = subprocess.run(["ffmpeg", "-v", "error", "-i", path, "-vn", "-ac", str(channels),
-                        "-ar", str(rate), "-f", "f32le", "-"], capture_output=True)
+def _decode(path, rate=22050, channels=1, af=None):
+    cmd = ["ffmpeg", "-v", "error", "-i", path, "-vn"]
+    if af:
+        cmd += ["-af", af]
+    r = subprocess.run(cmd + ["-ac", str(channels), "-ar", str(rate), "-f", "f32le", "-"],
+                       capture_output=True)
     return np.frombuffer(r.stdout, dtype="<f4").astype(np.float64)
 
 
@@ -198,13 +213,27 @@ def library(extra_folders=(), quiet=False):
                     info["mood"], info["mood_source"] = hit["mood"], hit["mood_source"]
                 cache[key] = hit = info
                 changed = True
-            tracks.append(dict(hit, path=key, title=_title(name),
-                               starter=os.path.dirname(key) == os.path.abspath(STARTER)))
+            starter = os.path.dirname(key) == os.path.abspath(STARTER)
+            if starter and hit.get("mood_source") not in ("user",):
+                # Starter tracks ship already labelled (lib/music/moods.json).
+                label = _starter_moods().get(name)
+                if label in MOODS and (hit.get("mood"), hit.get("mood_source")) != (label, "starter"):
+                    hit["mood"], hit["mood_source"] = label, "starter"
+                    changed = True
+            tracks.append(dict(hit, path=key, title=_title(name), starter=starter))
     if changed:
         os.makedirs(HOME, exist_ok=True)
         with open(CACHE, "w", encoding="utf-8") as f:
             json.dump(cache, f, indent=1)
     return tracks
+
+
+def _starter_moods():
+    try:
+        with open(os.path.join(STARTER, "moods.json"), encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        return {}
 
 
 def _title(name):
@@ -300,7 +329,7 @@ def build_bed(track, duration, words, out_wav):
     timeline from 0.
     """
     path, start = track["path"], track.get("start", 0.0)
-    music = _decode(path, RATE, 2).reshape(-1, 2)
+    music = _decode(path, RATE, 2, af=BED_EQ).reshape(-1, 2)
     music = music[int(start * RATE):]
     need = int(round(duration * RATE))
 

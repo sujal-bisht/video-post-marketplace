@@ -237,8 +237,9 @@ def _music_bed(args, xml, out_dir, name, fps, dur):
     ntsc = "TRUE" if abs(fps - round(fps)) > 0.01 else "FALSE"
     M.add_music_tracks(xml, bed, tb, ntsc, int(round(dur * fps)))
     M.remember(track["path"])
-    print("Music: %s (%s)%s, -20 LUFS in the gaps, -25 under speech; on its own timeline tracks"
-          % (rep["track"], rep["mood"], ", looped %d time(s)" % rep["loops"] if rep["loops"] else ""))
+    print("Music: %s (%s)%s, %.0f LUFS in the gaps, %.0f under speech; on its own timeline tracks"
+          % (rep["track"], rep["mood"], ", looped %d time(s)" % rep["loops"] if rep["loops"] else "",
+             rep["level_lufs_unducked"], rep["ducked_lufs"]))
     return bed
 
 

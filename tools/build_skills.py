@@ -75,6 +75,12 @@ def stage_skill(name, staging):
         if uses_faces and (LIB / "models").is_dir():
             shutil.copytree(LIB / "models", scripts / "models")
             inlined.append("models/")
+        # music.py looks for the starter tracks beside itself, in music/.
+        uses_music = any("music" in p.read_text(encoding="utf-8", errors="ignore")
+                         for p in (src / "scripts").glob("*.py"))
+        if uses_music and (LIB / "music").is_dir():
+            shutil.copytree(LIB / "music", scripts / "music")
+            inlined.append("music/")
     return dest, inlined
 
 
