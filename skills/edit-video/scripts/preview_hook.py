@@ -5,7 +5,9 @@
 
 One still: a frame from the opening of their video, the hook placed exactly
 where the final will put it (face-aware, clear of the captions), and their
-chosen caption style running underneath. It takes seconds.
+chosen caption style running underneath -- by default twice, side by side and
+numbered: 1 brand-colour box, 2 brand-colour text on a neutral box, for the
+user to pick. It takes seconds.
 
 Why it exists: after the questions the edit runs for minutes with nothing to
 look at, and that is where people drift away. This is the first real result,
@@ -43,6 +45,9 @@ def main():
     ap.add_argument("--template", choices=sorted(C.TEMPLATES),
                     help="Caption style; defaults to the saved one.")
     ap.add_argument("--language", default="en", choices=sorted(P.SAMPLE))
+    ap.add_argument("--style", choices=("box", "text"),
+                    help="Render one hook style only. Default: both, side by side and "
+                         "numbered, for the user to choose from.")
     ap.add_argument("--open", action="store_true",
                     help="Also open the file in the computer's own viewer. Only when this "
                          "session cannot show files in the chat (a plain terminal).")
@@ -71,9 +76,16 @@ def main():
 
     out = os.path.join(B.HOME, "previews")
     os.makedirs(out, exist_ok=True)
-    png = os.path.join(out, "%s_hook.png" % Path(args.video).stem)
-    rep = P.render_hook_preview(args.video, args.hook, fonts, C.parse_hex(profile["colour"]),
-                                template, png, words=words, start=start, language=args.language)
+    if args.style:
+        png = os.path.join(out, "%s_hook.png" % Path(args.video).stem)
+        rep = P.render_hook_preview(args.video, args.hook, fonts, C.parse_hex(profile["colour"]),
+                                    template, png, words=words, start=start,
+                                    language=args.language, style=args.style)
+    else:
+        png = os.path.join(out, "%s_hook_styles.png" % Path(args.video).stem)
+        rep = P.render_hook_styles(args.video, args.hook, fonts, C.parse_hex(profile["colour"]),
+                                   template, png, words=words, start=start,
+                                   language=args.language)
     print("Hook preview: %s" % png)
     print("  placed %s, %d line(s): %s" % (rep["where"], len(rep["lines"]), " / ".join(rep["lines"])))
     if rep["clash"]:

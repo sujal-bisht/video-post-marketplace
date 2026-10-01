@@ -35,13 +35,13 @@ HOOK_SECONDS = 4.5
 # real video the box covered half the frame width with empty space on every
 # side; next to the reference hooks (Hormozi-style boxes spanning the frame)
 # it looked small and timid.
-CAP_MAX, CAP_MIN = 0.078, 0.046
+CAP_MAX, CAP_MIN = 0.075, 0.046
 CAP = CAP_MIN
 MAX_WIDTH = 0.88     # widest a box may get, as a share of frame width
 MAX_LINES = 3
 # Padding as a share of the capital height: tight, like the references --
 # the box hugs the words.
-PAD_X, PAD_Y, PITCH, RADIUS = 0.36, 0.30, 1.40, 0.30
+PAD_X, PAD_Y, PITCH, RADIUS = 0.36, 0.24, 1.38, 0.30
 
 # Instagram and TikTok cover the top ~11% and the bottom ~24% of a vertical
 # video with their own interface. Text there is hidden behind it.
@@ -112,15 +112,12 @@ class Layout(object):
         return self.pitch * len(self.lines) + self.pad_y * 2
 
 
-def layout(text, width, height, fonts, scale=1.0, max_lines=None):
-    """The biggest hook that fits: largest text in at most three lines whose box
-    stays within MAX_WIDTH of the frame. `scale` shrinks it when placement needs
-    room."""
+def _fit(text, width, height, fonts, scale, max_lines):
+    """Largest text that fits in `max_lines` lines within MAX_WIDTH, or None."""
     short = min(width, height)
     ffile = fonts.file_for(800)
     words = text.split()
-    best = None
-    steps = 16
+    steps = 24
     for k in range(steps + 1):
         share = (CAP_MAX - (CAP_MAX - CAP_MIN) * k / steps) * scale
         size = C._ass_size_for_cap(ffile, short * share)
@@ -131,10 +128,40 @@ def layout(text, width, height, fonts, scale=1.0, max_lines=None):
         width_of = lambda s, size=size, spacing=spacing: C.text_width(s, ffile, size, spacing)
         lines = balanced_lines(words, width_of, max_text)
         widths = [width_of(l) for l in lines]
-        best = Layout(lines, size, cap, widths, cap * PITCH, pad_x, pad_y, cap * RADIUS)
-        if len(lines) <= (max_lines or MAX_LINES) and max(widths) <= max_text:
-            return best
-    return best
+        if len(lines) <= max_lines and max(widths) <= max_text:
+            return share, Layout(lines, size, cap, widths, cap * PITCH, pad_x, pad_y, cap * RADIUS)
+    return None
+
+
+def layout(text, width, height, fonts, scale=1.0, max_lines=None):
+    """The biggest hook that fills the frame width.
+
+    Two lines are preferred: with a narrow font like Anton, three short lines
+    at the size limit made a box only 61% of the frame wide -- tall and thin
+    next to the references, which run nearly edge to edge. Three lines are used
+    only when they make the text clearly bigger (25% or more), or when asked.
+    `scale` shrinks everything when placement needs room.
+    """
+    if max_lines:
+        hit = _fit(text, width, height, fonts, scale, max_lines)
+    else:
+        two = _fit(text, width, height, fonts, scale, 2)
+        three = _fit(text, width, height, fonts, scale, MAX_LINES)
+        if two and three:
+            hit = three if three[0] >= two[0] * 1.25 else two
+        else:
+            hit = two or three
+    if hit:
+        return hit[1]
+    # nothing fits even at the smallest size: the smallest, in as many lines as it takes
+    short = min(width, height)
+    ffile = fonts.file_for(800)
+    size = C._ass_size_for_cap(ffile, short * CAP_MIN * scale)
+    cap = C.cap_height(ffile, size)
+    width_of = lambda s: C.text_width(s, ffile, size, cap * -0.01)
+    lines = balanced_lines(text.split(), width_of, width * MAX_WIDTH - cap * PAD_X * 2)
+    return Layout(lines, size, cap, [width_of(l) for l in lines], cap * PITCH,
+                  cap * PAD_X, cap * PAD_Y, cap * RADIUS)
 
 
 # ----------------------------------------------------------------- placement
@@ -221,10 +248,28 @@ def choose_y(lay, occupied, height, caption_band=None, only_above=False):
 
 # ------------------------------------------------------------------- drawing
 
-def events(lay, width, cy, fonts, brand_rgb, start=0.0, end=HOOK_SECONDS, layer=5):
+# The two looks the user chooses between, shown side by side on their video.
+HOOK_STYLES = ("box", "text")
+HOOK_STYLE_LABELS = {"box": "Brand box", "text": "Brand text"}
+
+
+def style_colours(brand_rgb, style="box"):
+    """(box colour, text colour) for a hook style.
+
+    box   the brand colour as the box, white or near-black text on it
+    text  the brand colour as the text, on a white or near-black box --
+          whichever of the two the brand colour reads best on
+    """
+    neutral = C.readable_on(brand_rgb)
+    if style == "text":
+        return neutral, brand_rgb
+    return brand_rgb, neutral
+
+
+def events(lay, width, cy, fonts, brand_rgb, start=0.0, end=HOOK_SECONDS, layer=5, style="box"):
     """ASS events for the boxes and the text, positioned on centre line cy."""
     face, bold, _ = fonts.face_for(800)
-    text_rgb = C.readable_on(brand_rgb)
+    box_rgb, text_rgb = style_colours(brand_rgb, style)
     cx = width / 2.0
     # Lines whose widths nearly match are evened out, so the shape has a clean
     # straight side instead of a one-pixel ledge.
@@ -243,7 +288,7 @@ def events(lay, width, cy, fonts, brand_rgb, start=0.0, end=HOOK_SECONDS, layer=
         bw = w + lay.pad_x * 2
         out.append("Dialogue: %d,%s,Cap,,0,0,0,,{\\an7\\pos(%d,%d)\\p1\\bord0\\shad0\\blur0\\1c%s\\1a&H00&}%s{\\p0}"
                    % (layer, span, int(round(cx - bw / 2.0)), int(round(y0)),
-                      C._tag_colour(brand_rgb), C._rounded_rect(bw, y1 - y0, lay.radius)))
+                      C._tag_colour(box_rgb), C._rounded_rect(bw, y1 - y0, lay.radius)))
     for i, line in enumerate(lay.lines):
         mid = top + lay.pad_y + lay.pitch * (i + 0.5)
         mid += C._cap_offset(fonts.file_for(800), lay.size)
@@ -270,7 +315,8 @@ def standalone_ass(width, height, event_lines):
 
 
 def plan(text, video, width, height, fonts, brand_rgb, caption_template=None,
-         zoom_at=lambda t: 100.0, start=0.0, end=HOOK_SECONDS, draw_span=None, time_map=None):
+         zoom_at=lambda t: 100.0, start=0.0, end=HOOK_SECONDS, draw_span=None, time_map=None,
+         style="box"):
     """Lay out and place the hook. Returns (event_lines, report dict).
 
     Faces are looked for between `start` and `end` of `video`. The events are
@@ -311,7 +357,7 @@ def plan(text, video, width, height, fonts, brand_rgb, caption_template=None,
     # does not -- better than shrinking it.
     for hair, scale, only_above in attempts:
         occupied = occupied_bands(seen, zoom_at, width, height, hair)
-        for ml in (MAX_LINES, 2):
+        for ml in (None, 2):
             lay = layout(text, width, height, fonts, scale, max_lines=ml)
             cy, where = choose_y(lay, occupied, height, band, only_above)
             if cy is not None:
@@ -328,7 +374,7 @@ def plan(text, video, width, height, fonts, brand_rgb, caption_template=None,
               "scale": scale, "faces_found": sum(1 for b in seen.values() if b),
               "frames_checked": len(seen), "clash": clash}
     s0, s1 = draw_span or (start, end)
-    return events(lay, width, cy, fonts, brand_rgb, s0, s1), report
+    return events(lay, width, cy, fonts, brand_rgb, s0, s1, style=style), report
 
 
 def caption_band(template, width, height):

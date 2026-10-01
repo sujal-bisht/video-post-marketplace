@@ -136,7 +136,7 @@ def open_file(path):
 
 
 def render_hook_preview(video, hook, fonts, brand_rgb, template, out_png, words=None,
-                        start=0.0, language="en"):
+                        start=0.0, language="en", style="box"):
     """One still of the hook on the user's own video, placed exactly as the
     final will place it, with their caption style running underneath.
 
@@ -156,7 +156,7 @@ def render_hook_preview(video, hook, fonts, brand_rgb, template, out_png, words=
     end = min(dur, start + H.HOOK_SECONDS)
 
     events, report = H.plan(hook, video, pw, ph, fonts, brand_rgb, caption_template=template,
-                            start=start, end=end, draw_span=(0.0, end - start))
+                            start=start, end=end, draw_span=(0.0, end - start), style=style)
     if words:
         spoken = [dict(w, start=w["start"] - start, end=w["end"] - start) for w in words
                   if "start" in w and "end" in w and start <= w["start"] < end]
@@ -191,3 +191,51 @@ def render_hook_preview(video, hook, fonts, brand_rgb, template, out_png, words=
     finally:
         shutil.rmtree(work, ignore_errors=True)
     return report
+
+
+def render_hook_styles(video, hook, fonts, brand_rgb, template, out_png, words=None,
+                       start=0.0, language="en"):
+    """Both hook styles on the user's video, side by side and numbered, in one PNG.
+
+    The hook question is answered by looking, like the caption style: the same
+    opening frame twice, once as a brand-colour box with neutral text, once as
+    brand-colour text on a neutral box. Returns the placement report.
+    """
+    import context_line as H
+    work = tempfile.mkdtemp(prefix="vp-hookstyles-")
+    try:
+        panels, report = [], None
+        for i, style in enumerate(H.HOOK_STYLES, start=1):
+            panel = os.path.join(work, "%s.png" % style)
+            report = render_hook_preview(video, hook, fonts, brand_rgb, template, panel,
+                                         words=words, start=start, language=language,
+                                         style=style)
+            labelled = os.path.join(work, "%s_l.png" % style)
+            _label_png(panel, labelled, "%d  %s" % (i, H.HOOK_STYLE_LABELS[style]), fonts)
+            panels.append(labelled)
+        cmd = ["ffmpeg", "-y", "-v", "error"]
+        for p in panels:
+            cmd += ["-i", p]
+        cmd += ["-filter_complex", "[0][1]hstack=inputs=2", os.path.abspath(out_png)]
+        subprocess.run(cmd, check=True)
+    finally:
+        shutil.rmtree(work, ignore_errors=True)
+    return report
+
+
+def _label_png(src, dst, label, fonts):
+    """Write a number and name along the bottom of a preview panel."""
+    from PIL import Image, ImageDraw, ImageFont
+    img = Image.open(src).convert("RGB")
+    w, h = img.size
+    band = int(h * 0.07)
+    out = Image.new("RGB", (w, h + band), (17, 17, 17))
+    out.paste(img, (0, 0))
+    d = ImageDraw.Draw(out)
+    try:
+        font = ImageFont.truetype(fonts.file_for(800), int(band * 0.5))
+    except Exception:
+        font = ImageFont.load_default()
+    tw = d.textlength(label, font=font)
+    d.text(((w - tw) / 2, h + band * 0.22), label, fill=(255, 255, 255), font=font)
+    out.save(dst)

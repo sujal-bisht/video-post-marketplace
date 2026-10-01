@@ -369,29 +369,120 @@ def _pil(font_file, em):
     return ImageFont.truetype(font_file, max(1, int(round(em))))
 
 
-def _em_for(font_file, ass_size):
-    """The em libass actually draws when it is told `ass_size`.
+_CALIB = {}
+_CALIB_SIZE = 200
 
-    libass treats the size as line height, ascender to descender, so the em it
-    renders is smaller than the number it was given by the ratio below.
+
+def _calibration(font_file):
+    """How libass really draws this font, measured once by drawing it.
+
+    Returns (em per ASS size unit, cap height per ASS size unit, cap centre
+    offset per ASS size unit) -- what the font's own numbers are supposed to
+    predict. They do not always: the size libass picks for a font depends on
+    which of the font's two sets of vertical metrics it reads, and the two
+    disagree for some fonts. With Anton, the widths predicted from the metrics
+    came out 16% too wide, so every hook box had almost a capital letter's
+    height of empty space each side of the words. Drawing a test line through
+    libass itself and measuring the pixels cannot disagree with libass.
+
+    Cached in memory and in ~/.video-post/fonts/libass_calibration.json, keyed
+    by file, size and date, so each font is measured once per machine.
     """
+    import json
+    import shutil
+    import subprocess
+    import tempfile
+    key_path = os.path.abspath(font_file)
+    try:
+        st = os.stat(key_path)
+        key = "%s|%d|%d" % (key_path, st.st_size, int(st.st_mtime))
+    except OSError:
+        key = key_path
+    if key in _CALIB:
+        return _CALIB[key]
+    store = os.path.join(CACHE, "libass_calibration.json")
+    try:
+        with open(store, encoding="utf-8") as f:
+            disk = json.load(f)
+    except Exception:
+        disk = {}
+    if key in disk:
+        _CALIB[key] = tuple(disk[key])
+        return _CALIB[key]
+
+    fam, bold, _ = _face_name(key_path, None)
+    W, Hh, size = 2400, 600, _CALIB_SIZE
+    sample = "HHHHHHHHHH"
+    ass = "\n".join([
+        "[Script Info]", "ScriptType: v4.00+", "PlayResX: %d" % W, "PlayResY: %d" % Hh,
+        "WrapStyle: 2", "ScaledBorderAndShadow: yes", "", "[V4+ Styles]",
+        "Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, "
+        "BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, "
+        "BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding",
+        "Style: M,%s,%d,&H00FFFFFF,&H000000FF,&H00000000,&H00000000,%d,0,0,0,100,100,0,0,1,0,0,5,0,0,0,1"
+        % (fam, size, 1 if bold else 0),
+        "", "[Events]",
+        "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text",
+        "Dialogue: 0,0:00:00.00,0:00:01.00,M,,0,0,0,,{\\an5\\pos(%d,%d)}%s" % (W // 2, Hh // 2, sample),
+    ]) + "\n"
+    work = tempfile.mkdtemp(prefix="vp-calib-")
+    result = None
+    try:
+        os.makedirs(os.path.join(work, "fonts"))
+        shutil.copy(key_path, os.path.join(work, "fonts"))
+        with open(os.path.join(work, "c.ass"), "w", encoding="utf-8") as f:
+            f.write(ass)
+        r = subprocess.run(["ffmpeg", "-v", "error", "-f", "lavfi", "-i",
+                            "color=c=black:s=%dx%d:d=1" % (W, Hh), "-vf",
+                            "subtitles=c.ass:fontsdir=fonts", "-frames:v", "1",
+                            "-f", "rawvideo", "-pix_fmt", "gray", "-"],
+                           cwd=work, capture_output=True)
+        if r.returncode == 0 and len(r.stdout) >= W * Hh:
+            import numpy as np
+            img = np.frombuffer(r.stdout[:W * Hh], np.uint8).reshape(Hh, W)
+            ys, xs = np.nonzero(img > 128)
+            if len(xs):
+                width = float(xs.max() - xs.min() + 1)
+                cap = float(ys.max() - ys.min() + 1)
+                centre_dy = (ys.min() + ys.max()) / 2.0 - Hh / 2.0
+                # em from width: PIL's width of the same string at em 200
+                pil_w = _pil(key_path, 200).getbbox(sample)
+                pil_w = float(pil_w[2] - pil_w[0])
+                em = 200.0 * width / pil_w
+                result = (em / size, cap / size, centre_dy / size)
+    except Exception:
+        result = None
+    finally:
+        shutil.rmtree(work, ignore_errors=True)
+    if result is None:
+        f = _pil(key_path, 200)
+        ascent, descent = f.getmetrics()
+        box = f.getbbox("H")
+        em_per = 200.0 / float(ascent + descent)
+        result = (em_per, (box[3] - box[1]) / float(ascent + descent), 0.0)
+    _CALIB[key] = result
+    disk[key] = list(result)
+    try:
+        os.makedirs(CACHE, exist_ok=True)
+        with open(store, "w", encoding="utf-8") as f:
+            json.dump(disk, f, indent=1)
+    except Exception:
+        pass
+    return result
+
+
+def _em_for(font_file, ass_size):
+    """The em libass actually draws when it is told `ass_size` (measured)."""
     if not font_file:
         return ass_size * 0.8
-    f = _pil(font_file, 200)
-    ascent, descent = f.getmetrics()
-    return ass_size * 200.0 / float(ascent + descent)
+    return ass_size * _calibration(font_file)[0]
 
 
 def _ass_size_for_cap(font_file, cap_px):
-    """ASS font size whose capital letters come out `cap_px` tall."""
+    """ASS font size whose capital letters come out `cap_px` tall (measured)."""
     if not font_file:
         return cap_px / 0.56
-    f = _pil(font_file, 200)
-    box = f.getbbox("H")
-    cap_at_200 = float(box[3] - box[1])
-    ascent, descent = f.getmetrics()
-    em = cap_px * 200.0 / cap_at_200
-    return em * (ascent + descent) / 200.0
+    return cap_px / _calibration(font_file)[1]
 
 
 def text_width(text, font_file, ass_size, spacing_px=0):
@@ -406,9 +497,7 @@ def text_width(text, font_file, ass_size, spacing_px=0):
 def cap_height(font_file, ass_size):
     if not font_file:
         return ass_size * 0.56
-    f = _pil(font_file, _em_for(font_file, ass_size))
-    box = f.getbbox("H")
-    return box[3] - box[1]
+    return ass_size * _calibration(font_file)[1]
 
 
 # ---------------------------------------------------------------- profanity
@@ -695,12 +784,13 @@ def verify_font_log(log_text, fonts, weight):
 
 
 def _cap_offset(font_file, ass_size):
-    """How far libass's line-box centre sits from the centre of the capitals."""
+    """How far to move an \\an5 line so its capitals sit centred on the point.
+
+    Measured (see _calibration): libass centres the line box, not the
+    capitals, and how far apart those are depends on the font. Estimated from
+    the font's metrics, Anton's capitals sat visibly high in the hook box.
+    """
     if not font_file:
         return 0
-    f = _pil(font_file, _em_for(font_file, ass_size))
-    ascent, descent = f.getmetrics()
-    box = f.getbbox("H")
-    cap_mid_from_top = box[1] + (box[3] - box[1]) / 2.0
-    line_mid_from_top = (ascent + descent) / 2.0
-    return line_mid_from_top - cap_mid_from_top
+    return -ass_size * _calibration(font_file)[2]
+

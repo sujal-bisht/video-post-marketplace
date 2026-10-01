@@ -37,7 +37,7 @@ The user sees only questions and results. Everything else stays out of the chat.
    one to four words. No explanations of why you ask, no examples in the
    question, no jargon (LUFS, XML, template).
 4. **Ask only what only the user can answer:** brand font, brand colour,
-   caption style, and the hook. Nothing else -- never the platform, never
+   caption style, the hook line and its style. Nothing else -- never the platform, never
    "anything to turn off?", never "do you want slides?". The defaults below
    are decided; they are not questions.
 5. **Problems are a one-line heads-up, then carry on.** A font that cannot be
@@ -199,9 +199,10 @@ Read the transcript once, end to end, and in that one reading:
 
 None of this is reported while asking.
 
-### 1d. Their video, one line, then go
+### 1d. Pop-up three: the hook style -- shown, then go
 
-Render the opening with the chosen hook, and pick the music:
+As soon as the hook line is chosen, render it on their video in both styles,
+side by side and numbered, and pick the music:
 
 ```bash
 python scripts/preview_hook.py <their video> --hook "<the hook they chose>" \
@@ -209,11 +210,23 @@ python scripts/preview_hook.py <their video> --hook "<the hook they chose>" \
 python scripts/music_library.py pick --mood <the mood> --duration <rough length in seconds>
 ```
 
-Show the picture in the chat the same way (`SendUserFile`, `display:
-"render"`; `--open` only without a file tool), with one line: *"Your video opens like this, with
-'City Sunshine' under it. Editing now."* Horizontal video: just the music
-line. Then start at once -- this is not a question; it is the first result,
-and they go into the wait having already seen their video looking finished.
+Show the picture in the chat (`SendUserFile`, `display: "render"`; `--open`
+only without a file tool), then ONE pop-up:
+
+| Header | Question | Options |
+|---|---|---|
+| Hook look | Which hook style? | "Brand box" -- brand colour behind the words / "Brand text" -- brand colour words on white or black. The saved style first, marked "(last time)" |
+
+Save it, then one line and go: *"Editing now, with 'City Sunshine' under
+it."*
+
+```bash
+python scripts/brand.py hook-style box      # or: text
+```
+
+The picture is also the first result: they go into the wait having already
+seen their video opening, in their brand, looking finished. Horizontal video
+has no hook: no picture, no pop-up, just the music line.
 
 ## Step 2: the edit -- two commands
 
@@ -379,3 +392,10 @@ the user needs a full-size file (a 4K YouTube upload), rerun finish with
     the frame width. It now grows until the box fills ~88% of the width in up
     to three lines, hugs the words, and drops to two wider lines (shorter)
     before it shrinks, when the space above the head is tight.
+14. **The hook box had empty space all round with some fonts.** Text width was
+    predicted from the font's own metrics, and for Anton the prediction was
+    16% too wide, so the box was built around words that were not there:
+    almost a capital letter's height of space each side. Every font is now
+    measured once by drawing a test line through libass itself
+    (`captions._calibration`): Anton's side padding went from 0.89 to 0.32 of
+    a capital, as designed. Captions use the same measurement.

@@ -69,6 +69,9 @@ def main():
     ap.add_argument("--music", help="A specific track instead of picking by mood.")
     ap.add_argument("--no-music", action="store_true",
                     help="Only when the user asked for no background music.")
+    ap.add_argument("--hook-style", choices=("box", "text"),
+                    help="Override the saved hook style: box = brand-colour box, text = "
+                         "brand-colour text on a neutral box.")
     ap.add_argument("--hook-horizontal", action="store_true",
                     help="Allow the hook on a horizontal video. Only when the user asked.")
     args = ap.parse_args()
@@ -133,7 +136,8 @@ def main():
             hook_events, rep = H.plan(args.hook, media_path, w, h, fonts,
                                       C.parse_hex(profile["colour"]), caption_template=template,
                                       zoom_at=lambda t: _zoom_at(pts, t), start=0.0, end=end,
-                                      time_map=lambda t: F.timeline_to_source(segs, t))
+                                      time_map=lambda t: F.timeline_to_source(segs, t),
+                                      style=args.hook_style or profile.get("hook_style", "box"))
             print("Hook: %s, at %.0f%% of the height, %d line(s): %s"
                   % (rep["where"], rep["y_share"] * 100, len(rep["lines"]),
                      " / ".join(rep["lines"])))

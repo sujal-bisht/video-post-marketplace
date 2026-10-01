@@ -86,10 +86,22 @@ def main():
     s.add_argument("--template", choices=sorted(C.TEMPLATES))
     t = sub.add_parser("template")
     t.add_argument("name", choices=sorted(C.TEMPLATES))
+    h = sub.add_parser("hook-style", help="box = brand-colour box; text = brand-colour text")
+    h.add_argument("name", choices=("box", "text"))
     args = ap.parse_args()
 
     if args.cmd == "show":
         return show()
+    if args.cmd == "hook-style":
+        p = B.load()
+        if not p:
+            print("Set the font and colour first.")
+            return 1
+        p["hook_style"] = args.name
+        B.save(p)
+        print("Hook style: %s" % ("brand-colour box" if args.name == "box" else
+                                  "brand-colour text on a neutral box"))
+        return 0
     if args.cmd == "template":
         p = B.load()
         if not p:
