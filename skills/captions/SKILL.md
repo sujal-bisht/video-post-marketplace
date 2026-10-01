@@ -26,6 +26,10 @@ edited, or straight from the camera?"*
 
 ## Workflow
 
+Talk to the user exactly as `edit-video` says under "How to talk to the user":
+no intro, questions only as pop-ups, a few words each, nothing narrated, the
+brand only from `brand.py show`.
+
 ### 1. The brand and the style
 
 Exactly as in `edit-video` Step 1: confirm or ask for the brand font and colour,

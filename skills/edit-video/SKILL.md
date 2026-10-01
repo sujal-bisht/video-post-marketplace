@@ -22,39 +22,57 @@ description: >
 
 Raw footage in. A post-ready video out, and a timeline for anyone who edits.
 
-## The rule that shapes everything here
+## How to talk to the user -- read this first
 
-**Ask every question first. Then ask nothing else.** The user answers at the
-start -- font, colour, caption style, and on vertical video the hook -- and
-after that the whole edit runs on its own. Every other judgment call (what to
-cut, where to zoom, which word to emphasise) is yours to make.
+The user sees only questions and results. Everything else stays out of the chat.
 
-Why all of it up front: the edit takes minutes, and people walk away while it
-runs. A question asked halfway through sits unanswered until they come back,
-and the work stops with it. An approval queue in the middle of an edit is the
-failure this plugin exists to remove.
+1. **No intro.** No "how this works", no list of what the edit will do, no
+   "I've had a look at your video". The first thing the user sees is the first
+   question.
+2. **Questions are pop-ups, never typed out.** Use the host's question tool --
+   in Claude Code `AskUserQuestion`; in the Claude app its own pop-up question
+   tool. Several questions go in ONE pop-up. Only if no such tool exists, ask
+   in one short line per question.
+3. **Short and plain.** A question is a few words ("Brand font?"), each option
+   one to four words. No explanations of why you ask, no examples in the
+   question, no jargon (LUFS, XML, template).
+4. **Ask only what only the user can answer:** brand font, brand colour,
+   caption style, and the hook. Nothing else -- never the platform, never
+   "anything to turn off?", never "do you want slides?". The defaults below
+   are decided; they are not questions.
+5. **Problems are a one-line heads-up, then carry on.** A font that cannot be
+   fetched, a font missing letters: say it in a line and offer the fix in a
+   pop-up. If nothing is wrong, say nothing.
+6. **Do not narrate the work.** Which takes you cut, which mood you judged,
+   that a transcript is running -- none of it goes in the chat while you ask.
+   The handover at the end says what happened, briefly.
+7. **Only this plugin's own memory.** The brand comes from `brand.py show` and
+   nowhere else: not from memories of other conversations, not from other
+   tools' files (a BUSINESS-BRAIN.md, a brand guide elsewhere). Do not mention
+   what you know from outside; it does not exist for this edit.
 
-**And every choice is shown, not described.** The caption styles are a picture
-of their own video in their brand; the chosen hook comes back as a picture of
-their video opening with it. Those pictures are also the first results they
-get -- seconds in, before the long wait -- and that is what keeps them with
-the tool while it works.
+Why all questions come first: the edit takes minutes and people walk away
+while it runs. A question halfway through sits unanswered and the work stops.
+Why every choice is shown as a picture of their own video: nobody can choose a
+caption style from its name, and those pictures are the first results they get
+-- seconds in, before the wait -- which is what keeps them with the tool.
 
-## What runs by default
+## What runs by default -- never asked about
 
-| Step | Default | Skip only when |
-|---|---|---|
-| Rough cut | **on** | the user says not to cut |
-| Slow zoom | **on** | the user says no zooms |
-| Captions | **on** | the user says no captions |
-| Sound polish | **on** | the user wants the sound exactly as recorded: `prepare.py --no-audio-polish` |
-| Background music | **on**, vertical and horizontal | the user says no music: `finish.py --no-music` |
-| Hook (context line) | **on for vertical video** | the user says no hook. Horizontal: off unless the user asks |
-| Slides and cutout | **off** | -- run it ONLY when the user asks for it AND hands over the slides |
+| Step | Default |
+|---|---|
+| Rough cut: dead air, fumbles, repeated takes | **on** |
+| Sound clean-up and platform loudness | **on** |
+| Slow zooms | **on** |
+| Captions in the brand | **on** |
+| Background music | **on**, vertical and horizontal |
+| Hook line | **on** for vertical video; horizontal only if the user asks |
+| Slides and cutout | **off** -- only when the user's own message asks for it AND gives the slides |
 
-Slides are off by default because most videos have none. If the user asks for
-slides but has not given you the images, ask for them. Never invent slides,
-and never run the cutout without real assets.
+A default is switched off only when the user says so unprompted ("no music",
+"don't cut it"): `prepare.py --no-audio-polish`, `finish.py --no-music`,
+`--no-captions`, no `--zooms`, no `--hook`. If they ask for slides without
+giving the images, ask for the images -- never invent slides.
 
 ## Step 0: tools, once per machine
 
@@ -71,170 +89,123 @@ python -m pip install pillow fonttools
 ```
 
 If ffmpeg or faster-whisper is missing, install those too. Do not ask the user
-to; do it and tell them what you did.
+to, and do not report it: only an install that fails gets a one-line heads-up.
 
 ## Step 1: ask, before any work
 
-**The music library, once per machine.** Tracks come from the plugin's starter
-set and any folder of the user's own (`music_library.py folder <path>`).
-New tracks are measured automatically; their mood is only a guess until it is
-labelled. Before the first edit, and whenever new tracks appear, run
-`python scripts/music_library.py unlabelled` and label each from its title and
-numbers with `music_library.py label <file> <mood>`. A mood the user sets
-(`music_library.py set`) is never overruled.
+Silently, before the first question:
 
-### 1-start. Transcribe in the background, right away
+- Start the transcript **in the background** (the hook is written from it, and
+  the rough cut reuses it -- never transcribe the raw video twice):
 
-The hook is written from what the video says, so it needs a transcript -- and
-transcribing is the rough cut's own first step anyway. Start it **in the
-background** before asking anything, so it runs while the user answers the
-brand questions:
+  ```bash
+  python ../rough-cut/scripts/transcribe.py <video> <scratch>/<name>_transcript.json --model small
+  ```
 
-```bash
-python ../rough-cut/scripts/transcribe.py <video> <scratch>/<name>_transcript.json --model small
-```
+- Check the saved brand: `python scripts/brand.py show`.
+- Music library, first run on a machine or when new tracks appear:
+  `python scripts/music_library.py unlabelled`, and label each from its title
+  and numbers with `music_library.py label <file> <mood>`. A mood the user set
+  (`music_library.py set`) is never overruled.
 
-The rough cut reuses this file; do not transcribe the raw video twice.
+### 1a. Pop-up one: the brand
 
-### 1a. Brand font and brand colour
+**Brand saved** -- one question:
 
-First check what is saved:
+| Header | Question | Options |
+|---|---|---|
+| Brand | Same brand as last time? | "Rethink Sans, #E90D41" (the saved one) / "Change it" |
 
-```bash
-python scripts/brand.py show
-```
+**Nothing saved, or "Change it"** -- two questions in one pop-up:
 
-**If a brand is saved**, show it in one line and ask one question: *"Same brand
-as last time -- Rethink Sans, #E90D41 -- or something different?"*
+| Header | Question | Options |
+|---|---|---|
+| Font | Brand font? | three common Google Fonts (e.g. Montserrat, Poppins, Inter); they type their own under Other |
+| Colour | Brand colour? | three clean colours with hex (e.g. "Red #E11D48", "Blue #1D4ED8", "Black #111111"); they type their own hex under Other |
 
-**If nothing is saved**, ask for both, and say why in one sentence: *"Your
-captions go out in your brand, so I need your brand font and your brand
-colour."*
-
-Then save it:
+If they describe a colour instead of a hex code, pick a clean hex for it.
+Save:
 
 ```bash
 python scripts/brand.py set --font "Rethink Sans" --colour "#E90D41"
-python scripts/brand.py set --font "Acme Sans" --font-file A-Regular.otf --font-file A-ExtraBold.otf --colour "#1D4ED8"
 ```
 
-`set` refuses rather than guesses. Exit code 2 means the question goes back to
-the user. The three cases:
+`set` refuses rather than guesses (exit code 2). Then a one-line heads-up and a
+pop-up, nothing more:
 
-- **A Google Font** (Montserrat, Poppins, Rethink Sans...): fetched and saved
-  automatically. Nothing to ask.
-- **A licensed font** (Helvetica Neue, Proxima Nova, Gotham...): ask the user to
-  drop the font files in -- every weight they have, ExtraBold especially. If
-  they don't have the files, propose the closest free alternative **by name**
-  and wait for a yes. Never switch fonts without saying so.
-- **A font that cannot draw every letter** -- usually a demo or trial copy. It
-  installs and looks normal, then prints gaps where letters should be. The
-  demo Proxima Nova tested here could not draw Ä Ö Ü ß ü, which would have
-  broken every German caption. Tell the user which letters are missing and ask
-  for the full version, or a free alternative.
+- **Paid font, files not given** (Helvetica Neue, Proxima Nova, Gotham...):
+  *"Proxima Nova isn't free to download."* Pop-up: "Upload the font files" /
+  "Use Montserrat instead" -- the closest free alternative, by name. Never
+  switch fonts without this.
+- **Font missing letters** (a demo copy that cannot draw the umlauts):
+  *"This copy of the font can't draw some letters."* Pop-up: "Upload the full
+  font" / "Use <alternative>".
 
-If they don't know their hex code, pick a clean one, say which, and move on.
+A Google Font is fetched automatically: nothing to say.
 
-### 1b. The caption style -- shown, not described
+### 1b. The picture, then pop-up two: caption style and hook
 
-**Nobody can choose a caption style from its name.** "Spotlight or Emphasis?"
-means nothing until they see it. So the question always comes with the
-picture: all four templates, on **their own video, in their brand**.
+Render the four caption styles on **their own video, in their brand**:
 
 ```bash
 python scripts/preview_templates.py <their video> --language de
 ```
 
-It takes seconds (nothing is transcribed) and writes two files to
-`~/.video-post/previews/`: a still with all four side by side, numbered 1-4,
-and a short moving clip, because the templates differ most in rhythm. Use
-`--language de` for German footage so the sample reads naturally.
+Seconds; writes a still (all four, numbered) and a short moving clip to
+`~/.video-post/previews/`. `--language de` for German footage.
 
-**Put the still in front of the user, in the conversation, before asking.**
+**Show the still first** -- in the Claude app `SendUserFile` with
+`display: "render"` (attach the clip the same way); elsewhere the script has
+opened it, so say so in one line. The picture must be on screen before the
+pop-up appears.
 
-- If this session has a tool for showing the user a file (in the Claude
-  desktop app, `SendUserFile` with `display: "render"`), send the still with
-  it, and attach the moving clip the same way.
-- Otherwise the script has already opened both on their screen. Say so in one
-  line, and give the two paths so they can open them again.
-- Never ask with only the four names, and never put up a multiple-choice
-  picker before the picture is there. The picture is the question.
+Then ONE pop-up with both questions (vertical video; horizontal has no hook):
 
-Then ask: *"Which of the four do you want -- 1, 2, 3 or 4?"* The numbers are
-printed on the picture.
-
-| | Template | What it does |
+| Header | Question | Options |
 |---|---|---|
-| 1 | Spotlight | one word at a time, large, in the brand colour |
-| 2 | Badge | one word at a time on a tight rounded brand-colour chip |
-| 3 | Impact | one to three words, uppercase, white |
-| 4 | Emphasis | a short phrase, the key word in the brand colour |
+| Captions | Which caption style? | Spotlight / Badge / Impact / Emphasis -- descriptions: "one big word", "one word on a chip", "1-3 words, caps", "phrase, key word in colour". The saved style first, marked "(last time)" |
+| Hook | Which opening line? | the three hooks from 1c: label = its first few words, description = the full line. Their own line goes under Other |
+
+If the transcript is not done when the caption picture is ready, ask the
+caption style alone and the hook in a second pop-up as soon as it is.
 
 ```bash
 python scripts/brand.py template badge
 ```
 
-The choice is saved. Next time, show the picture again anyway and ask "same
-style -- Badge -- or a different one?" in the same message as the brand
-check. It costs seconds, and it is the first thing they get to look at.
+Whatever hook they choose or type goes in exactly as written.
 
-### 1c. The hook -- vertical video only
+### 1c. Silently, while they answer: hooks, mood, speech cuts
 
-Skip this for horizontal video, unless the user asked for a hook there.
+Read the transcript once, end to end, and in that one reading:
 
-Once the background transcript is done, read it end to end and write three
-hook options by `references/hook-standards.md`: Layer 1 first (for them, what
-is in it for them, worth watching to the end), then Layer 2 from
-`references/hook-library.md`, then re-check Layer 1. **In the language of the
-video.**
+- **Write three hook options** (vertical video) by
+  `references/hook-standards.md`: Layer 1 first (for them, what is in it for
+  them, worth watching to the end), then Layer 2 from
+  `references/hook-library.md`, then re-check Layer 1. Three different
+  families. **In the language of the video.**
+- **Judge the video's mood** for the music -- `calm`, `warm`, `cinematic`,
+  `upbeat`, `moody`. The feel of what is said, not the topic.
+- **Decide the speech cuts** by `rough-cut` Step 5's rules (check
+  `suspect_words` first, keep deliberate repetition) and write
+  `<scratch>/cutlist_speech.json`.
 
-Show the three as plain numbered lines and ask which one -- or their own
-words. Ask it in the same message as the caption style when the transcript is
-ready by then, so it is one round of questions, not two.
+None of this is reported while asking.
 
-Whatever they choose goes in exactly as they wrote or picked it.
+### 1d. Their video, one line, then go
 
-**In the same reading, decide the video's mood** for the background music --
-one of `calm`, `warm`, `cinematic`, `upbeat`, `moody` (see
-`music_library.py unlabelled` for what each means). Judge the feel of what is
-said, not the topic: a calm explanation of an exciting result is still calm.
-
-**And decide the speech cuts.** You are reading the whole
-transcript for the hooks anyway, so this is also when the restarts, fumbles
-and repeated takes get picked out, by `rough-cut` Step 5's rules -- check
-`suspect_words` first, keep deliberate repetition. Write them to
-`<scratch>/cutlist_speech.json` before the user has even answered. One reading
-of the transcript, not two.
-
-### 1d. Show them their hook, then go
-
-As soon as the hook is chosen, render it on their video:
+Render the opening with the chosen hook, and pick the music:
 
 ```bash
 python scripts/preview_hook.py <their video> --hook "<the hook they chose>" \
     --transcript <scratch>/<name>_transcript.json
-```
-
-One still, in seconds: the opening of their video with the hook exactly where
-the final will put it, and their chosen caption style running underneath, with
-their real words. Pick the music in the same breath:
-
-```bash
 python scripts/music_library.py pick --mood <the mood> --duration <rough length in seconds>
 ```
 
-Show the picture the same way as the caption picture, with one line that names
-the track: *"This is how your video opens, with 'As Time Flies' (calm) under
-it. Starting the edit now -- say stop if you want anything changed."*
-
-For horizontal video (no hook), say just the music line.
-
-Then start, without waiting for an answer. This is not a fourth question; it
-is the first result. The edit runs for minutes with nothing to look at, and
-that silence is where people give up on a tool. They should go into the wait
-having already seen their video, in their brand, looking finished.
-
-**Now stop asking, and start working.**
+Show the picture, with one line: *"Your video opens like this, with
+'City Sunshine' under it. Editing now."* Horizontal video: just the music
+line. Then start at once -- this is not a question; it is the first result,
+and they go into the wait having already seen their video looking finished.
 
 ## Step 2: the edit -- two commands
 
@@ -310,20 +281,29 @@ running underneath it.
 
 ## Step 3: hand it over
 
-| File | What it is |
-|---|---|
-| `<name>_final.mp4` | **The one to post.** Cut, zoomed, captioned. No editing software needed. |
-| `<name>.xml` | The editable timeline for Premiere or Resolve: every cut, zoom and slide as its own clip, captions on their own track, the hook on its own track above that |
-| `<name>_original.<ext>`, `<name>_audio.wav`, `<name>_media/` | What the timeline plays: the original footage (linked, not copied, when it is on the same drive -- no extra disk space), the cut sound, the caption and hook layers. Not for posting |
+Short, in this shape -- nothing else:
 
-Say it in that order, and say: **keep everything in this folder together.**
-Editors find media by searching the folder they import from, so a file that
+> **Done.** Post this one: `<name>_final.mp4`
+> For Premiere or Resolve: `<name>.xml` -- keep the whole folder together.
+> 1:12 of pauses and retakes cut, 4 zooms, music: *City Sunshine*, sound cleaned up.
+
+Add a line only for something the user must know: a font that was swapped, a
+hook that overlaps the face, a check that failed. Keep the folder rule in:
+editors find media by searching the folder they import from, so a file that
 wanders off shows as Media Offline.
 
-The final is rendered at 1080 on the short side. Instagram, TikTok, LinkedIn
-and Shorts all cap short-form at 1080x1920 and re-compress anything bigger, so
-rendering 4K for them is time thrown away. If the user needs a full-size file
--- a 4K YouTube upload -- rerun finish with `--full-resolution`.
+What the folder holds, if they ask:
+
+| File | What it is |
+|---|---|
+| `<name>_final.mp4` | **The one to post.** Cut, zoomed, captioned, with music. No editing software needed. |
+| `<name>.xml` | The editable timeline: every cut and zoom as its own clip; captions, hook and music on their own tracks |
+| `<name>_original.<ext>`, `<name>_audio.wav`, `<name>_media/` | What the timeline plays: the original footage (linked, not copied, on the same drive), the cut sound, the caption, hook and music layers. Not for posting |
+
+The final is rendered at 1080 on the short side: Instagram, TikTok, LinkedIn
+and Shorts cap short-form at 1080x1920 and re-compress anything bigger. Only if
+the user needs a full-size file (a 4K YouTube upload), rerun finish with
+`--full-resolution`.
 
 ## Failure modes that actually happened while building this
 
