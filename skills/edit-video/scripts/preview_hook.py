@@ -1,7 +1,7 @@
 """Show the chosen hook on the user's own video, before the long work starts.
 
     python preview_hook.py <raw video> --hook "<the hook they chose>" \\
-        [--transcript <raw transcript.json>] [--template badge] [--no-open]
+        [--transcript <raw transcript.json>] [--template badge] [--open]
 
 One still: a frame from the opening of their video, the hook placed exactly
 where the final will put it (face-aware, clear of the captions), and their
@@ -43,7 +43,10 @@ def main():
     ap.add_argument("--template", choices=sorted(C.TEMPLATES),
                     help="Caption style; defaults to the saved one.")
     ap.add_argument("--language", default="en", choices=sorted(P.SAMPLE))
-    ap.add_argument("--no-open", action="store_true")
+    ap.add_argument("--open", action="store_true",
+                    help="Also open the file in the computer's own viewer. Only when this "
+                         "session cannot show files in the chat (a plain terminal).")
+    ap.add_argument("--no-open", action="store_true", help=argparse.SUPPRESS)
     args = ap.parse_args()
 
     profile = B.load()
@@ -75,7 +78,7 @@ def main():
     print("  placed %s, %d line(s): %s" % (rep["where"], len(rep["lines"]), " / ".join(rep["lines"])))
     if rep["clash"]:
         print("  WARNING: no clear space; the hook overlaps the face in this framing.")
-    if not args.no_open:
+    if args.open and not args.no_open:
         P.open_file(png)
     return 0
 

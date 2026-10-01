@@ -32,7 +32,10 @@ def main():
     ap.add_argument("video")
     ap.add_argument("--language", default="en", choices=sorted(P.SAMPLE),
                     help="Language of the sample sentence. Match the video.")
-    ap.add_argument("--no-open", action="store_true", help="Write the files but do not open them.")
+    ap.add_argument("--open", action="store_true",
+                    help="Also open the files in the computer's own viewer. Only when this "
+                         "session cannot show files in the chat (a plain terminal).")
+    ap.add_argument("--no-open", action="store_true", help=argparse.SUPPRESS)
     args = ap.parse_args()
 
     profile = B.load()
@@ -58,7 +61,7 @@ def main():
     print()
     for name in P.ORDER:
         print("  %-12s %s" % (P.LABELS[name], C.TEMPLATES[name]["blurb"]))
-    if not args.no_open:
+    if args.open and not args.no_open:
         P.open_file(png)
         P.open_file(mp4)
     return 0

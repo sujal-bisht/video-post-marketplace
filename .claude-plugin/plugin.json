@@ -1,7 +1,7 @@
 {
   "name": "video-post",
   "display_name": "Video Post-Production",
-  "version": "0.11.1",
+  "version": "0.11.2",
   "description": "Post-production for talking-head video, run locally. Hand it raw footage and it asks for your brand font, colour, caption style and hook line up front, then cuts the dead air and fumbled takes, cleans up the sound, adds slow zooms and background music, captions it in your brand and puts the hook on screen clear of your face. You get a post-ready video plus an editable Premiere/Resolve timeline. Slides with a speaker cutout on request.",
   "author": {
     "name": "Sujal Bisht"

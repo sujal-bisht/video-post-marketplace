@@ -154,10 +154,17 @@ python scripts/preview_templates.py <their video> --language de
 Seconds; writes a still (all four, numbered) and a short moving clip to
 `~/.video-post/previews/`. `--language de` for German footage.
 
-**Show the still first** -- in the Claude app `SendUserFile` with
-`display: "render"` (attach the clip the same way); elsewhere the script has
-opened it, so say so in one line. The picture must be on screen before the
-pop-up appears.
+**Show both in the chat, before the pop-up.** Send the still AND the moving
+clip into this conversation with the session's file tool -- in the Claude app
+`SendUserFile` with `display: "render"`, both files in one call. Nothing opens
+in the computer's own viewer: the user stays in the session, and the previews
+appear where the questions are. Never point them at a folder or a file path.
+
+Only if this session has no way to show a file (a plain terminal), rerun the
+script with `--open`, which opens them in the computer's viewer instead, and
+say so in one line.
+
+The pictures must be on screen before the pop-up appears.
 
 Then ONE pop-up with both questions (vertical video; horizontal has no hook):
 
@@ -202,7 +209,8 @@ python scripts/preview_hook.py <their video> --hook "<the hook they chose>" \
 python scripts/music_library.py pick --mood <the mood> --duration <rough length in seconds>
 ```
 
-Show the picture, with one line: *"Your video opens like this, with
+Show the picture in the chat the same way (`SendUserFile`, `display:
+"render"`; `--open` only without a file tool), with one line: *"Your video opens like this, with
 'City Sunshine' under it. Editing now."* Horizontal video: just the music
 line. Then start at once -- this is not a question; it is the first result,
 and they go into the wait having already seen their video looking finished.
