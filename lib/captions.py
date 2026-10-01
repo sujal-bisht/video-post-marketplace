@@ -538,21 +538,21 @@ def mask_profanity(word):
 TEMPLATES = {
     # Tracking tightened on request, but not until letters touch: at -0.04 the
     # O and W of "HOW" met in a lossless close-up. -0.025 keeps it tight and clean.
-    "spotlight": {"words": 1, "max_chars": 14, "case": "upper", "weight": 800, "cap": 0.060,
+    "spotlight": {"words": 1, "max_chars": 14, "case": "upper", "weight": 800, "cap": 0.075,
                   "y": (0.645, 0.78), "tracking": -0.025, "halo": True, "chip": False,
                   "emphasis": False, "colour": "brand",
                   "blurb": "one word at a time, large, in the brand colour"},
-    "badge":     {"words": 1, "max_chars": 14, "case": "asis", "weight": 800, "cap": 0.038,
+    "badge":     {"words": 1, "max_chars": 14, "case": "asis", "weight": 800, "cap": 0.0475,
                   "y": (0.69, 0.80), "tracking": -0.02, "halo": False, "chip": True,
                   "emphasis": False, "colour": "text",
                   "blurb": "one word at a time on a tight rounded brand-colour chip"},
-    "impact":    {"words": 3, "max_chars": 18, "case": "upper", "weight": 800, "cap": 0.050,
+    "impact":    {"words": 3, "max_chars": 18, "case": "upper", "weight": 800, "cap": 0.0625,
                   "y": (0.60, 0.76), "tracking": -0.02, "halo": True, "chip": False,
                   "emphasis": False, "colour": "text",
                   "blurb": "one to three words, uppercase, white, at the neck"},
     # With everything already ExtraBold there is no heavier weight left to set
     # the key word in, so it is marked in the brand colour instead.
-    "emphasis":  {"words": 5, "max_chars": 26, "case": "asis", "weight": 800, "cap": 0.036,
+    "emphasis":  {"words": 5, "max_chars": 26, "case": "asis", "weight": 800, "cap": 0.045,
                   "y": (0.575, 0.80), "tracking": -0.01, "halo": True, "chip": False,
                   "emphasis": True, "colour": "text",
                   "blurb": "a short phrase with the key word in the brand colour"},
@@ -676,11 +676,18 @@ def build_ass(words, template, width, height, brand_rgb, text_rgb, fonts,
         "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text",
     ]
 
-    # The halo: a dim, heavily blurred copy behind the text. It darkens the
-    # patch of picture under the words so they separate from a busy frame,
-    # without showing up as a visible shadow shape.
-    halo_tags = ("{\\bord%.1f\\blur%.1f\\shad0\\1c&H000000&\\3c&H000000&\\1a&HB0&\\3a&HB0&}"
-                 % (cap * 0.22, cap * 0.55))
+    # The halo: blurred dark copies behind the text, in two layers. A wide,
+    # very soft one darkens the patch of picture under the words; a tighter one
+    # gives each letter a dark edge. Both are blurred enough that no shadow
+    # SHAPE ever shows. The first version was one faint layer (30% black) and
+    # on a real video the white words were "not that visible"; this is about
+    # twice the darkness, still with no hard edge.
+    halo_layers = [
+        ("{\\bord%.1f\\blur%.1f\\shad0\\1c&H000000&\\3c&H000000&\\1a&H80&\\3a&H80&}"
+         % (cap * 0.42, cap * 0.95)),
+        ("{\\bord%.1f\\blur%.1f\\shad0\\1c&H000000&\\3c&H000000&\\1a&H60&\\3a&H60&}"
+         % (cap * 0.14, cap * 0.38)),
+    ]
 
     events = []
     for gi, group in enumerate(groups):
@@ -731,7 +738,8 @@ def build_ass(words, template, width, height, brand_rgb, text_rgb, fonts,
             pos = "{\\an5\\pos(%d,%d)}" % (cx, int(round(cy + _cap_offset(ffile, size))))
 
         if t["halo"]:
-            events.append("Dialogue: 0,%s,Cap,,0,0,0,,%s%s%s" % (span, pos, halo_tags, halo_body))
+            for tags in halo_layers:
+                events.append("Dialogue: 0,%s,Cap,,0,0,0,,%s%s%s" % (span, pos, tags, halo_body))
         events.append("Dialogue: 1,%s,Cap,,0,0,0,,%s%s" % (span, pos, body))
 
     return "\n".join(head + events) + "\n"

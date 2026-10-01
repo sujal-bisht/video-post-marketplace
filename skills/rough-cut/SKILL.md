@@ -178,10 +178,24 @@ waiting for one to be obvious:
   -> "fill it, press play"; "not just your--" -> "not just your ego"; "points
   to your entire month" -> "points your entire month ... at one business
   number". Completing an abandoned phrase counts as a change.
-- **Word-for-word identical repeat = emphasis. Keep both.** "Watching you.
-  Watching you." fixes nothing, so it is doing rhetorical work. Same for
-  parallel constructions that reuse a phrase deliberately ("you know what
+- **A stutter or a retaken line is a fumble, even word for word.** "So, so
+  nothing..." -- the first "so" goes. A whole line said twice -- the first
+  take goes. This used to say "identical repeat = emphasis, keep both", and on
+  a real test that rule kept "so, so". The only identical repeats that stay
+  are a SHORT complete sentence echoed on purpose ("Watching you. Watching
+  you.") and emphasis words doubled ("very very", "no, no").
+- Parallel constructions that reuse a phrase deliberately stay ("you know what
   Tuesday's post is for" / "Tuesday's post is for nothing").
+
+**Most of this is already done for you.** `edit-video`'s prepare step finds
+stutters, word-for-word restarts and filler sounds by pattern (`lib/fumbles.py`),
+on the raw transcript and again on the transcript of the cut, and first
+listens for words Whisper dropped -- a spoken "So," that never reached the
+transcript caused exactly such a stutter. Your speech cuts are for what a
+pattern cannot catch: a restart that was reworded, an abandoned half-sentence,
+a tangent. When you cut a retaken line yourself, start the cut at the FIRST
+word of the abandoned take, never one word in -- a cut that began at "nothing"
+instead of "So" left the "So" behind.
 
 If it is genuinely unclear even after listening, cut the earlier instance: a
 redundant line costs little, whereas leaving a botched take in is the exact

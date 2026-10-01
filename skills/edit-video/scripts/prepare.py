@@ -41,6 +41,10 @@ import time
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
+for _candidate in (HERE, HERE.parents[2] / "lib"):
+    if (_candidate / "fumbles.py").is_file():
+        sys.path.insert(0, str(_candidate))
+        break
 
 
 def _script(skill, name):
@@ -125,17 +129,69 @@ def main():
         with open(speech, "w", encoding="utf-8") as f:
             json.dump({"cuts": []}, f)
 
-    cut_args = [_script("rough-cut", "render_cuts.py"), args.video, args.transcript, args.out,
-                "--cutlist", sil, "--cutlist", speech, "--basename", name]
-    if not args.slides:
-        cut_args.append("--no-trimmed-video")
-    _run("The cut", cut_args)
+    # Fumbles -- stutters, restarted phrases, filler sounds -- found by pattern,
+    # on every edit (lib/fumbles.py). The model's speech cuts cover what a
+    # pattern cannot (a reworded restart, a tangent); these cover what a
+    # reader misses or a rule protected: "so, so nothing..." kept its first
+    # "so" on a real test.
+    import fumbles as FUM
+    raw = json.load(open(args.transcript, encoding="utf-8"))
+    # Whisper drops words. A spoken "So," that never reached the transcript
+    # made a stutter no transcript rule could see; sounds with no word on them
+    # are transcribed on their own first, and short wordless ones are noise.
+    t1 = time.time()
+    raw_words, noise_cuts = FUM.recover(raw.get("words", []), args.video,
+                                        language=raw.get("language"))
+    recovered = [w for w in raw_words if w.get("recovered")]
+    fumble_cuts = FUM.find(raw_words) + noise_cuts
+    print("== Listening for dropped words (%.0fs): %d recovered%s, %d noise(s)\n"
+          % (time.time() - t1, len(recovered),
+             "" if not recovered else " (" + ", ".join("'%s' at %.1fs" % (w["word"], w["start"])
+                                                    for w in recovered) + ")",
+             len(noise_cuts)))
+    fum = os.path.join(args.scratch, "cutlist_fumbles.json")
+
+    def cut_and_check():
+        with open(fum, "w", encoding="utf-8") as f:
+            json.dump({"cuts": fumble_cuts}, f, indent=1)
+        cut_args = [_script("rough-cut", "render_cuts.py"), args.video, args.transcript, args.out,
+                    "--cutlist", sil, "--cutlist", speech, "--cutlist", fum, "--basename", name]
+        if not args.slides:
+            cut_args.append("--no-trimmed-video")
+        _run("The cut", cut_args)
+        _run("Transcribing the cut", [_script("rough-cut", "transcribe.py"), wav, cut_t,
+                                      "--model", "small"], show=False)
 
     xml = os.path.join(args.out, name + ".xml")
     wav = os.path.join(args.out, name + "_audio.wav")
     cut_t = os.path.join(args.scratch, "%s_cut_transcript.json" % name)
-    _run("Transcribing the cut", [_script("rough-cut", "transcribe.py"), wav, cut_t,
-                                  "--model", "small"], show=False)
+    cut_and_check()
+
+    # Second look, on the cut itself: a fumble that survived -- often the
+    # first word of a retake left behind at a junction -- is plain in the
+    # cut's own transcript. Mapped back to the raw recording and cut, once.
+    import final_render as FR
+    cut_words, cut_noise = FUM.recover(json.load(open(cut_t, encoding="utf-8")).get("words", []),
+                                       wav, language=raw.get("language"))
+    leftover = FUM.find(cut_words) + cut_noise
+    if leftover:
+        media, segs, _ = FR.picture_source(xml)
+        for c in leftover:
+            a = FR.timeline_to_source(segs, c["start"])
+            b = FR.timeline_to_source(segs, max(c["start"], c["end"]))
+            if b > a:
+                fumble_cuts.append(dict(c, start=round(a, 3), end=round(b, 3),
+                                        reason=c["reason"] + " (found in the cut)"))
+        cut_and_check()
+    still = FUM.find(FUM.recover(json.load(open(cut_t, encoding="utf-8")).get("words", []), wav,
+                                 language=raw.get("language"))[0]) if leftover else []
+    print("== Fumbles: %d cut%s" % (len(fumble_cuts), "" if not still else
+                                     "; %d still in the cut (judge them)" % len(still)))
+    for c in fumble_cuts:
+        print("   %s" % c["reason"])
+    for c in still:
+        print("   STILL IN: %s" % c["reason"])
+    print()
 
     verify = _run("Checking the cut", [_script("rough-cut", "verify_output.py"), wav,
                                        "--original", args.video, "--xml", xml,

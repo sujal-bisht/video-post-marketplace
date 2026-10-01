@@ -399,3 +399,15 @@ the user needs a full-size file (a 4K YouTube upload), rerun finish with
     measured once by drawing a test line through libass itself
     (`captions._calibration`): Anton's side padding went from 0.89 to 0.32 of
     a capital, as designed. Captions use the same measurement.
+15. **"So, so" survived the cut.** Two causes, both fixed. A rule called
+    word-for-word repeats "emphasis" and kept them; and Whisper had dropped the
+    first "So," from the transcript entirely, so nothing reading the
+    transcript could see it. Prepare now listens to every speech-loud sound no
+    transcribed word accounts for, transcribes it on its own, and finds
+    stutters, restarts and fillers by pattern (`lib/fumbles.py`) -- before the
+    cut and again on the cut. On the DJI test it recovered the dropped "So,"
+    and cut it; the cut reads clean on a fresh listen.
+16. **Captions too small and hard to read on a busy frame.** All four styles
+    are 25% bigger, and the halo behind the text is two blurred layers about
+    twice as dark -- still no visible shadow shape.
+
