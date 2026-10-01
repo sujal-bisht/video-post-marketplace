@@ -68,6 +68,13 @@ def stage_skill(name, staging):
         for module in sorted(LIB.glob("*.py")):
             shutil.copy2(module, scripts / module.name)
             inlined.append(module.name)
+        # faces.py looks for its model beside itself, in models/. Only the
+        # skills that place a hook need it; the rest stay small.
+        uses_faces = any("context_line" in p.read_text(encoding="utf-8", errors="ignore")
+                         for p in (src / "scripts").glob("*.py"))
+        if uses_faces and (LIB / "models").is_dir():
+            shutil.copytree(LIB / "models", scripts / "models")
+            inlined.append("models/")
     return dest, inlined
 
 

@@ -3,9 +3,10 @@ name: edit-video
 description: >
   The front door for editing talking-head video: raw footage in, a finished,
   captioned, post-ready video out, plus an editable Premiere/Resolve timeline.
-  By default it cuts the dead air and fumbled takes, adds slow zooms, and puts
-  on captions in the user's own brand font and colour. It asks for the brand
-  and the caption style first, then does everything else without asking. Runs
+  By default it cuts the dead air and fumbled takes, adds slow zooms, puts on
+  captions in the user's own brand font and colour, and on vertical video adds
+  a hook line for the first seconds. It asks every question first -- brand,
+  caption style, hook -- then does everything else without asking. Runs
   locally; footage never leaves the machine. Use for ANY request to edit,
   post-produce, trim, tighten, clean up, caption, or "make ready to post" a
   video of someone talking -- Reels, TikToks, Shorts, course lessons, podcast
@@ -20,11 +21,15 @@ Raw footage in. A post-ready video out, and a timeline for anyone who edits.
 
 ## The rule that shapes everything here
 
-**Ask the brand questions first. Then ask nothing else.** The user answers
-three things at the start -- font, colour, caption style -- and after that the
-whole edit runs on its own. Every other judgment call (what to cut, where to
-zoom, which word to emphasise) is yours to make. An approval queue in the
-middle of an edit is the failure this plugin exists to remove.
+**Ask every question first. Then ask nothing else.** The user answers at the
+start -- font, colour, caption style, and on vertical video the hook -- and
+after that the whole edit runs on its own. Every other judgment call (what to
+cut, where to zoom, which word to emphasise) is yours to make.
+
+Why all of it up front: the edit takes minutes, and people walk away while it
+runs. A question asked halfway through sits unanswered until they come back,
+and the work stops with it. An approval queue in the middle of an edit is the
+failure this plugin exists to remove.
 
 ## What runs by default
 
@@ -33,6 +38,7 @@ middle of an edit is the failure this plugin exists to remove.
 | Rough cut | **on** | the user says not to cut |
 | Slow zoom | **on** | the user says no zooms |
 | Captions | **on** | the user says no captions |
+| Hook (context line) | **on for vertical video** | the user says no hook. Horizontal: off unless the user asks |
 | Slides and cutout | **off** | -- run it ONLY when the user asks for it AND hands over the slides |
 
 Slides are off by default because most videos have none. If the user asks for
@@ -57,6 +63,19 @@ If ffmpeg or faster-whisper is missing, install those too. Do not ask the user
 to; do it and tell them what you did.
 
 ## Step 1: ask, before any work
+
+### 1-start. Transcribe in the background, right away
+
+The hook is written from what the video says, so it needs a transcript -- and
+transcribing is the rough cut's own first step anyway. Start it **in the
+background** before asking anything, so it runs while the user answers the
+brand questions:
+
+```bash
+python ../rough-cut/scripts/transcribe.py <video> <scratch>/<name>_transcript.json --model small
+```
+
+The rough cut reuses this file; do not transcribe the raw video twice.
 
 ### 1a. Brand font and brand colour
 
@@ -124,6 +143,22 @@ python scripts/brand.py template badge
 
 The choice is saved. Next time, confirm it in the same breath as the brand.
 
+### 1c. The hook -- vertical video only
+
+Skip this for horizontal video, unless the user asked for a hook there.
+
+Once the background transcript is done, read it end to end and write three
+hook options by `references/hook-standards.md`: Layer 1 first (for them, what
+is in it for them, worth watching to the end), then Layer 2 from
+`references/hook-library.md`, then re-check Layer 1. **In the language of the
+video.**
+
+Show the three as plain numbered lines and ask which one -- or their own
+words. Ask it in the same message as the caption style when the transcript is
+ready by then, so it is one round of questions, not two.
+
+Whatever they choose goes in exactly as they wrote or picked it.
+
 **Now stop asking, and start working.**
 
 ## Step 2: the edit, in this order
@@ -131,29 +166,37 @@ The choice is saved. Next time, confirm it in the same breath as the brand.
 The order matters. Each step writes into the same timeline, and the later ones
 read what the earlier ones made.
 
-1. **Rough cut** -- follow the `rough-cut` skill end to end, including its
-   verification with `--xml`. It leaves `<name>_trimmed.mp4`, `<name>.xml` and
-   `<name>_audio.wav`, plus a transcript of the trimmed video from its verify
+1. **Rough cut** -- follow the `rough-cut` skill end to end, reusing the
+   transcript from Step 1, including its verification with `--xml`. It leaves
+   `<name>_trimmed.mp4`, `<name>.xml` and `<name>_audio.wav`, plus a transcript of the trimmed video from its verify
    step. Keep that transcript: the zooms and the captions both need it.
 2. **Slides and cutout** -- only if asked for, with assets. Follow `slide-cutout`.
 3. **Slow zoom** -- follow `slow-zoom`, after the slides so no zoom hides under
    one. It adapts to length on its own: short-form gets shorter, closer moves.
-4. **Finish** -- captions and the post-ready video:
+4. **Finish** -- captions, the hook and the post-ready video:
 
 ```bash
 python scripts/finish.py <out>/<name>.xml --video <out>/<name>_trimmed.mp4 \
-    --transcript <scratch>/trimmed_transcript.json
+    --transcript <scratch>/trimmed_transcript.json --hook "<the hook they chose>"
 ```
 
 `finish.py` renders the whole edit in one pass, and checks ffmpeg's own log to
 prove the brand font was drawn. If it prints FAIL, do not hand the video over.
+
+The hook is placed on its own: it finds the speaker's face across the 4.5
+seconds it is on screen, allows for any zoom running then, and goes above the
+head when there is room, otherwise below the chin -- never over the face,
+never over the captions, never under the platform's own buttons. It prints
+where it went. If it prints a WARNING that it overlaps the face, say so in the
+handover. It stays on for 4.5 seconds with no animation, and the captions keep
+running underneath it.
 
 ## Step 3: hand it over
 
 | File | What it is |
 |---|---|
 | `<name>_final.mp4` | **The one to post.** Cut, zoomed, captioned. No editing software needed. |
-| `<name>.xml` | The editable timeline for Premiere or Resolve: every cut, zoom and slide as its own clip, captions on their own top track |
+| `<name>.xml` | The editable timeline for Premiere or Resolve: every cut, zoom and slide as its own clip, captions on their own track, the hook on its own track above that |
 | `<name>_trimmed.mp4`, `<name>_audio.wav`, `<name>_media/` | What the timeline plays. Not for posting |
 
 Say it in that order, and say: **keep everything in this folder together.**

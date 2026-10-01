@@ -91,6 +91,9 @@ Ask: whole folder as a batch, or a single file? Follow their answer.
 
 ### Step 3: Transcribe (also measures real dead air)
 
+If `edit-video` already transcribed this raw video in the background, use that
+file and skip this step.
+
 ```bash
 python scripts/transcribe.py <video> <transcript.json> --model small
 ```

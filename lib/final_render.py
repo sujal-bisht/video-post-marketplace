@@ -70,8 +70,9 @@ def overlays_from_xml(xml_path):
             if fe is None or fe.get("id") not in files:
                 continue
             path = files[fe.get("id")]
-            # the caption layer is burned separately, never composited twice
-            if os.path.basename(path).endswith("_captions.mov"):
+            # the caption and hook layers are burned from their scripts, never
+            # composited a second time from these transparent copies
+            if os.path.basename(path).endswith(("_captions.mov", "_hook.mov")):
                 continue
             out.append({"track": ti, "path": path,
                         "start": int(ci.findtext("start")) / fps,
@@ -278,31 +279,42 @@ def _rate(fps):
 
 
 def add_caption_track(xml_path, mov_path, width, height):
-    """Put the caption layer on its own top track of the existing timeline.
+    """Put the caption layer on its own top track of the existing timeline."""
+    add_layer_track(xml_path, mov_path, width, height, "captions")
+
+
+def add_layer_track(xml_path, mov_path, width, height, kind, start=0.0, end=None):
+    """Put a transparent layer (captions, hook) on its own top track.
 
     Edits the file in place, like every other step: one timeline per folder.
-    Re-running replaces the previous caption track rather than adding another.
+    Re-running replaces the previous track of the same kind rather than adding
+    another. `start`/`end` are seconds on the timeline; the layer file itself
+    starts at its own frame 0.
     """
     fps, _, _, dur = timeline_shape(xml_path)
     text = open(xml_path, encoding="utf-8").read()
-    text = re.sub(r"\s*<track><!-- vp-captions -->.*?</track>", "", text, flags=re.S)
+    marker = "<!-- vp-%s -->" % kind
+    text = re.sub(r"\s*<track>%s.*?</track>" % re.escape(marker), "", text, flags=re.S)
 
-    frames = int(round(dur * fps))
+    first = int(round(start * fps))
+    last = int(round((dur if end is None else min(end, dur)) * fps))
+    length = last - first
     tb = int(round(fps))
     ntsc = "TRUE" if abs(fps - round(fps)) > 0.01 else "FALSE"
     rate = "<rate><timebase>%d</timebase><ntsc>%s</ntsc></rate>" % (tb, ntsc)
     from fcp7xml import _pathurl
     name = os.path.basename(mov_path)
     track = (
-        "<track><!-- vp-captions -->"
-        '<clipitem id="captions-1"><name>%s</name>%s'
-        "<start>0</start><end>%d</end><in>0</in><out>%d</out><enabled>TRUE</enabled>"
-        '<file id="file-captions"><name>%s</name><pathurl>%s</pathurl>%s'
+        "<track>%s"
+        '<clipitem id="%s-1"><name>%s</name>%s'
+        "<start>%d</start><end>%d</end><in>0</in><out>%d</out><enabled>TRUE</enabled>"
+        '<file id="file-%s"><name>%s</name><pathurl>%s</pathurl>%s'
         "<duration>%d</duration><media><video><samplecharacteristics>%s"
         "<width>%d</width><height>%d</height><pixelaspectratio>square</pixelaspectratio>"
         "</samplecharacteristics><alphatype>straight</alphatype></video></media></file>"
         "</clipitem></track>"
-    ) % (name, rate, frames, frames, name, _pathurl(mov_path), rate, frames, rate, width, height)
+    ) % (marker, kind, name, rate, first, last, length, kind, name, _pathurl(mov_path), rate,
+         length, rate, width, height)
 
     close = _sequence_video_close(text)
     text = text[:close] + track + text[close:]

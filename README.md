@@ -1,17 +1,23 @@
 # Video Post-Production for Claude Code
 
-Automated post-production for talking-head course video. Everything runs on your
-own machine — your footage is never uploaded anywhere.
+Automated post-production for talking-head video. Everything runs on your own
+machine — your footage is never uploaded anywhere.
 
-Two skills:
+Hand it a raw video. It asks a few things up front — your brand font and colour,
+a caption style, and for vertical video the hook line — then does the rest on
+its own:
 
-- **rough-cut** — removes dead air, filler words, false starts and botched takes
-  from raw footage
-- **slide-cutout** — puts your slides on screen with you in a circular corner
-  cutout
+- **cuts** the dead air, filler words, false starts and botched takes
+- **slow zooms** on the lines that carry weight
+- **captions** in your brand font and colour
+- **a hook line** on screen for the first seconds of short-form video, placed
+  clear of your face
+- **slides** with you in a circular corner cutout, when you ask and give it the
+  slides
 
-Both hand you an **editable timeline** for Premiere Pro or DaVinci Resolve, not a
-finished video, so you keep the final say on every cut.
+You get **`<name>_final.mp4`**, ready to post with no editing software, plus an
+**editable timeline** for Premiere Pro or DaVinci Resolve with every cut, zoom,
+caption and the hook on its own track.
 
 ---
 
@@ -26,14 +32,14 @@ install separately.
 
 ```bash
 winget install ffmpeg
-pip install faster-whisper
+pip install faster-whisper pillow fonttools
 ```
 
 **Mac:**
 
 ```bash
 brew install ffmpeg
-pip install faster-whisper
+pip install faster-whisper pillow fonttools
 ```
 
 **Got an NVIDIA graphics card?** This makes transcription several times faster.
@@ -71,7 +77,22 @@ desktop app's Code tab.
 
 You don't run the plugin; you just say what you want and the right skill starts.
 
-### Trim raw footage
+### Edit a video, start to finish
+
+> Edit this video for Instagram: C:\Videos\reel-04.mp4
+
+First it asks everything it needs, all at once, so you can walk away after:
+
+1. **Your brand font and colour** — saved, so next time it just confirms. Any
+   Google Font is fetched automatically; for a paid font it asks for the files.
+2. **A caption style** — it shows all four on a frame of your own video, in
+   your brand: Spotlight, Badge, Impact, Emphasis.
+3. **The hook** (vertical video) — three options written from what you actually
+   say, in the video's language. Pick one, tweak one, or write your own.
+
+Then it cuts, zooms, captions and adds the hook without asking again.
+
+### Trim raw footage only
 
 Put your raw videos in a folder, then:
 
@@ -119,20 +140,24 @@ all normal clips you can drag, shorten or delete.
 
 ### Slow zooms
 
-Ask for them and they get placed for you:
+On by default in a full edit. You don't say where: it reads what you said and
+puts a gentle 110% push-in on the moments that carry weight, about half the
+runtime moving. They arrive as normal keyframes on the clips, so you can soften
+one, move it, or delete it in your editor.
 
-> Add some slow zooms to lesson-03.
+### Captions on a video that's already edited
 
-You don't say where. It reads what you said, picks the two or three moments that
-carry weight, and puts a gentle push-in on each one — leaving the rest wide.
-They arrive as normal keyframes on the clips, so you can soften one, move it, or
-delete it in your editor. Nothing is re-rendered, so this adds no waiting.
+> Add captions to my finished video: C:\Videos\final-cut.mp4
 
-### Captions
+Same brand and style questions, then a captioned copy. Nothing else is touched.
 
-Premiere does these well on its own: `Text` panel → `Transcribe Sequence` →
-`Create Captions`. Its transcript panel is the easiest place to fix any word it
-mishears, so there's no skill here for it.
+### The hook
+
+The line of text on screen for the first 4.5 seconds of a short-form video,
+telling the viewer the video is for them and what's in it. It sits in a box in
+your brand colour, above your head when there's room, below your chin when
+there isn't — never over your face or the captions. Horizontal video gets one
+only if you ask.
 
 ---
 
