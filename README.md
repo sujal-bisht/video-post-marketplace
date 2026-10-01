@@ -11,6 +11,7 @@ its own:
 - **cleans up the sound**: rumble and background hiss removed when needed, volume
   evened out, set to the loudness Instagram, TikTok and YouTube play at
 - **slow zooms** on the lines that carry weight
+- **background music** that fits the video's mood, sitting well under the voice
 - **captions** in your brand font and colour
 - **a hook line** on screen for the first seconds of short-form video, placed
   clear of your face

@@ -269,7 +269,7 @@ def _stage(ass_path, fonts):
 
 
 def render_final(base_video, xml_path, out_path, ass_path=None, fonts=None,
-                 crf=20, preset="veryfast", full_resolution=False):
+                 crf=20, preset="veryfast", full_resolution=False, music_wav=None):
     """One pass: cut, zooms, overlays, captions. Returns the ffmpeg log.
 
     Reads the picture from whatever V1 plays -- the original footage, cut on the
@@ -291,7 +291,7 @@ def render_final(base_video, xml_path, out_path, ass_path=None, fonts=None,
     hw_args, head = hwdecode.choose(os.path.abspath(media), ow, oh)
     try:
         return _render_final(base_video, xml_path, out_path, ass_path, fonts, crf, preset,
-                             full_resolution, hw_args, head)
+                             full_resolution, hw_args, head, music_wav)
     except SystemExit:
         if not hw_args:
             raise
@@ -299,11 +299,11 @@ def render_final(base_video, xml_path, out_path, ass_path=None, fonts=None,
         # footage, the software path renders the same thing, just slower.
         print("GPU decoding failed on this video; rendering in software instead.")
         return _render_final(base_video, xml_path, out_path, ass_path, fonts, crf, preset,
-                             full_resolution, [], None)
+                             full_resolution, [], None, music_wav)
 
 
 def _render_final(base_video, xml_path, out_path, ass_path, fonts, crf, preset,
-                  full_resolution, hw_args, head):
+                  full_resolution, hw_args, head, music_wav=None):
     fps, w, h, dur = timeline_shape(xml_path)
     ow, oh = output_size(w, h, full_resolution)
     if head is None:
@@ -319,6 +319,10 @@ def _render_final(base_video, xml_path, out_path, ass_path, fonts, crf, preset,
         else:
             cmd += ["-i", os.path.abspath(base_video)]
             audio_map = "1:a?"
+        first_overlay = 2
+        if music_wav:
+            cmd += ["-i", os.path.abspath(music_wav)]
+            first_overlay = 3
         overlays = overlays_from_xml(xml_path)
         for o in overlays:
             cmd += ["-i", os.path.abspath(o["path"])]
@@ -344,7 +348,7 @@ def _render_final(base_video, xml_path, out_path, ass_path, fonts, crf, preset,
         chain.append("[%s]%s[v0]" % (src, ",".join(pre) or "null"))
 
         last = "v0"
-        for i, o in enumerate(overlays, start=2):
+        for i, o in enumerate(overlays, start=first_overlay):
             length = o["end"] - o["start"]
             chain.append("[%d:v]trim=start=%.4f:duration=%.4f,setpts=PTS-STARTPTS+%.4f/TB,"
                          "scale=%d:%d[o%d]" % (i, o["in"], length, o["start"], ow, oh, i))
@@ -357,6 +361,12 @@ def _render_final(base_video, xml_path, out_path, ass_path, fonts, crf, preset,
         else:
             chain.append("[%s]null[vout]" % last)
 
+        if music_wav and sound:
+            # The bed is already levelled and ducked (music.build_bed): this is
+            # a plain sum, then a limiter as a safety net at -1 dBTP.
+            chain.append("[1:a][2:a]amix=inputs=2:duration=first:normalize=0,"
+                         "alimiter=limit=0.891:level=false[aout]")
+            audio_map = "[aout]"
         with open(os.path.join(work, "graph.txt"), "w", encoding="utf-8") as f:
             f.write(";\n".join(chain))
         cmd += ["-filter_complex_script", "graph.txt", "-map", "[vout]", "-map", audio_map,

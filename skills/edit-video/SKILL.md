@@ -4,7 +4,8 @@ description: >
   The front door for editing talking-head video: raw footage in, a finished,
   captioned, post-ready video out, plus an editable Premiere/Resolve timeline.
   By default it cuts the dead air and fumbled takes, cleans up the sound and
-  sets it to platform loudness, adds slow zooms, puts on captions in the
+  sets it to platform loudness, adds slow zooms and background music, puts on
+  captions in the
   user's own brand font and colour, and on vertical video adds
   a hook line for the first seconds. It asks every question first -- brand,
   caption style, hook -- showing each choice on the user's own video, then
@@ -47,6 +48,7 @@ the tool while it works.
 | Slow zoom | **on** | the user says no zooms |
 | Captions | **on** | the user says no captions |
 | Sound polish | **on** | the user wants the sound exactly as recorded: `prepare.py --no-audio-polish` |
+| Background music | **on**, vertical and horizontal | the user says no music: `finish.py --no-music` |
 | Hook (context line) | **on for vertical video** | the user says no hook. Horizontal: off unless the user asks |
 | Slides and cutout | **off** | -- run it ONLY when the user asks for it AND hands over the slides |
 
@@ -72,6 +74,14 @@ If ffmpeg or faster-whisper is missing, install those too. Do not ask the user
 to; do it and tell them what you did.
 
 ## Step 1: ask, before any work
+
+**The music library, once per machine.** Tracks come from the plugin's starter
+set and any folder of the user's own (`music_library.py folder <path>`).
+New tracks are measured automatically; their mood is only a guess until it is
+labelled. Before the first edit, and whenever new tracks appear, run
+`python scripts/music_library.py unlabelled` and label each from its title and
+numbers with `music_library.py label <file> <mood>`. A mood the user sets
+(`music_library.py set`) is never overruled.
 
 ### 1-start. Transcribe in the background, right away
 
@@ -184,7 +194,12 @@ ready by then, so it is one round of questions, not two.
 
 Whatever they choose goes in exactly as they wrote or picked it.
 
-**In the same reading, decide the speech cuts.** You are reading the whole
+**In the same reading, decide the video's mood** for the background music --
+one of `calm`, `warm`, `cinematic`, `upbeat`, `moody` (see
+`music_library.py unlabelled` for what each means). Judge the feel of what is
+said, not the topic: a calm explanation of an exciting result is still calm.
+
+**And decide the speech cuts.** You are reading the whole
 transcript for the hooks anyway, so this is also when the restarts, fumbles
 and repeated takes get picked out, by `rough-cut` Step 5's rules -- check
 `suspect_words` first, keep deliberate repetition. Write them to
@@ -202,9 +217,17 @@ python scripts/preview_hook.py <their video> --hook "<the hook they chose>" \
 
 One still, in seconds: the opening of their video with the hook exactly where
 the final will put it, and their chosen caption style running underneath, with
-their real words. Show it the same way as the caption picture, with one line:
-*"This is how your video opens. Starting the edit now -- say stop if you want
-anything changed."*
+their real words. Pick the music in the same breath:
+
+```bash
+python scripts/music_library.py pick --mood <the mood> --duration <rough length in seconds>
+```
+
+Show the picture the same way as the caption picture, with one line that names
+the track: *"This is how your video opens, with 'As Time Flies' (calm) under
+it. Starting the edit now -- say stop if you want anything changed."*
+
+For horizontal video (no hook), say just the music line.
 
 Then start, without waiting for an answer. This is not a fourth question; it
 is the first result. The edit runs for minutes with nothing to look at, and
@@ -255,8 +278,19 @@ Then two judgments, from what it printed:
 ```bash
 python scripts/finish.py <output folder>/<name>.xml \
     --transcript <scratch>/<name>_cut_transcript.json \
-    --zooms <scratch>/zooms.json --hook "<the hook they chose>"
+    --zooms <scratch>/zooms.json --hook "<the hook they chose>" --music-mood <the mood>
 ```
+
+To use the exact track you named in the preview, pass `--music <its path>`
+instead of `--music-mood`; picking by mood twice can choose differently,
+because it avoids the last few tracks used.
+
+**The music** is levelled and ducked from the transcript: about -25 LUFS
+while someone speaks, rising to about -20 LUFS in the opening, real pauses and
+the ending, with a soft fade in and out -- 6-11 dB under the voice, there for
+the feel and never in the way. Looped with a crossfade when the video is
+longer than the track. It is in the final, and on its own two audio tracks in
+the timeline (`<name>_media/<name>_music.wav`).
 
 **Slides change the order.** Only when the user asked for slides and gave the
 images: run prepare with `--slides` (it then also makes the trimmed copy the

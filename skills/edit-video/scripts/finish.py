@@ -34,6 +34,7 @@ try:
     import captions as C
     import context_line as H
     import final_render as F
+    import music as M
 except ImportError as exc:  # pragma: no cover
     raise SystemExit("Missing a module (%s). Install with: python -m pip install pillow fonttools"
                      % exc)
@@ -63,6 +64,11 @@ def main():
     ap.add_argument("--hook", help="The context line shown for the first 4.5s. Written from "
                     "the transcript against references/hook-standards.md and approved by the "
                     "user before the edit started.")
+    ap.add_argument("--music-mood", choices=M.MOODS,
+                    help="The video's feel, judged from the transcript: picks the background track.")
+    ap.add_argument("--music", help="A specific track instead of picking by mood.")
+    ap.add_argument("--no-music", action="store_true",
+                    help="Only when the user asked for no background music.")
     ap.add_argument("--hook-horizontal", action="store_true",
                     help="Allow the hook on a horizontal video. Only when the user asked.")
     args = ap.parse_args()
@@ -168,9 +174,13 @@ def main():
                                           b - a))
             for kind, script, mov, a, b in layers]
 
+    music_wav = None
+    if not args.no_music:
+        music_wav = _music_bed(args, xml, out_dir, name, fps, dur)
+
     final = os.path.join(out_dir, "%s_final.mp4" % name)
     log = F.render_final(args.video or media_path, xml, final, ass_path=burn_ass, fonts=fonts,
-                         full_resolution=args.full_resolution)
+                         full_resolution=args.full_resolution, music_wav=music_wav)
     ow, oh = F.output_size(w, h, args.full_resolution)
     print("Rendered %s at %dx%d in %.0fs" % (os.path.basename(final), ow, oh, time.time() - t0))
 
@@ -197,6 +207,39 @@ def main():
         print("\nThe brand font was NOT what ffmpeg drew. Do not hand this over.")
         return 1
     return 0
+
+
+def _music_bed(args, xml, out_dir, name, fps, dur):
+    """Pick the track, build the ducked bed, put it on the timeline. Returns the wav."""
+    import music_library as L
+    if args.music:
+        known = [t for t in M.library(L.folders(), quiet=True)
+                 if os.path.abspath(t["path"]) == os.path.abspath(args.music)]
+        track = known[0] if known else dict(M.analyze(args.music), path=os.path.abspath(args.music),
+                                            title=Path(args.music).stem)
+    else:
+        if not args.music_mood:
+            raise SystemExit("Background music needs --music-mood (the video's feel, from the "
+                             "transcript), a specific --music track, or --no-music.")
+        track = M.pick(args.music_mood, dur, L.folders())
+        if not track:
+            print("Music skipped: the library is empty (no starter tracks, no music folder).")
+            return None
+    words = []
+    if args.transcript:
+        words = [w for w in json.load(io.open(args.transcript, encoding="utf-8"))["words"]
+                 if "start" in w and "end" in w]
+    media_dir = os.path.join(out_dir, "%s_media" % name)
+    os.makedirs(media_dir, exist_ok=True)
+    bed = os.path.join(media_dir, "%s_music.wav" % name)
+    rep = M.build_bed(track, dur, words, bed)
+    tb = int(round(fps))
+    ntsc = "TRUE" if abs(fps - round(fps)) > 0.01 else "FALSE"
+    M.add_music_tracks(xml, bed, tb, ntsc, int(round(dur * fps)))
+    M.remember(track["path"])
+    print("Music: %s (%s)%s, -20 LUFS in the gaps, -25 under speech; on its own timeline tracks"
+          % (rep["track"], rep["mood"], ", looped %d time(s)" % rep["loops"] if rep["loops"] else ""))
+    return bed
 
 
 def _run_zoom_step(script, argv):

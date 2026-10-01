@@ -152,7 +152,15 @@ def plan(path, room_db=None):
         report["noise_reduction_db"] = round(nr, 1)
     else:
         report["noise_reduction_db"] = 0.0
-    steps.append("acompressor=threshold=-21dB:ratio=2.5:attack=15:release=200:makeup=1")
+    # Compression only on a clean recording. It turns the loud voice down and
+    # the loudness step then lifts everything back up -- background included.
+    # On a noisy phone voice note that narrowed the gap between voice and
+    # background from 19.5 dB to 12.1 dB: the "polished" version was noisier.
+    if report["noise_reduction_db"] == 0.0:
+        steps.append("acompressor=threshold=-21dB:ratio=2.5:attack=15:release=200:makeup=1")
+        report["compression"] = True
+    else:
+        report["compression"] = False
     return ",".join(steps), report
 
 
