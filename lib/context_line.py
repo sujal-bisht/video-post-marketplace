@@ -29,8 +29,19 @@ high, between faces on a call grid. So placement is measured, not fixed:
 import captions as C
 
 HOOK_SECONDS = 4.5
-CAP = 0.042          # capital height as a share of the short side, from the references
-MAX_WIDTH = 0.80     # widest a box may get, as a share of frame width
+# SIZE: the text grows until the widest box fills ~88% of the frame width, in
+# at most three lines -- between these two capital heights (share of the short
+# side). The first version used a fixed 0.042 with generous padding, and on a
+# real video the box covered half the frame width with empty space on every
+# side; next to the reference hooks (Hormozi-style boxes spanning the frame)
+# it looked small and timid.
+CAP_MAX, CAP_MIN = 0.078, 0.046
+CAP = CAP_MIN
+MAX_WIDTH = 0.88     # widest a box may get, as a share of frame width
+MAX_LINES = 3
+# Padding as a share of the capital height: tight, like the references --
+# the box hugs the words.
+PAD_X, PAD_Y, PITCH, RADIUS = 0.36, 0.30, 1.40, 0.30
 
 # Instagram and TikTok cover the top ~11% and the bottom ~24% of a vertical
 # video with their own interface. Text there is hidden behind it.
@@ -101,18 +112,29 @@ class Layout(object):
         return self.pitch * len(self.lines) + self.pad_y * 2
 
 
-def layout(text, width, height, fonts, scale=1.0):
+def layout(text, width, height, fonts, scale=1.0, max_lines=None):
+    """The biggest hook that fits: largest text in at most three lines whose box
+    stays within MAX_WIDTH of the frame. `scale` shrinks it when placement needs
+    room."""
     short = min(width, height)
     ffile = fonts.file_for(800)
-    size = C._ass_size_for_cap(ffile, short * CAP * scale)
-    cap = C.cap_height(ffile, size)
-    spacing = cap * -0.01
-    pad_x, pad_y = cap * 0.62, cap * 0.42
-    max_text = width * MAX_WIDTH - pad_x * 2
-    width_of = lambda s: C.text_width(s, ffile, size, spacing)
-    lines = balanced_lines(text.split(), width_of, max_text)
-    widths = [width_of(l) for l in lines]
-    return Layout(lines, size, cap, widths, cap * 1.62, pad_x, pad_y, cap * 0.42)
+    words = text.split()
+    best = None
+    steps = 16
+    for k in range(steps + 1):
+        share = (CAP_MAX - (CAP_MAX - CAP_MIN) * k / steps) * scale
+        size = C._ass_size_for_cap(ffile, short * share)
+        cap = C.cap_height(ffile, size)
+        spacing = cap * -0.01
+        pad_x, pad_y = cap * PAD_X, cap * PAD_Y
+        max_text = width * MAX_WIDTH - pad_x * 2
+        width_of = lambda s, size=size, spacing=spacing: C.text_width(s, ffile, size, spacing)
+        lines = balanced_lines(words, width_of, max_text)
+        widths = [width_of(l) for l in lines]
+        best = Layout(lines, size, cap, widths, cap * PITCH, pad_x, pad_y, cap * RADIUS)
+        if len(lines) <= (max_lines or MAX_LINES) and max(widths) <= max_text:
+            return best
+    return best
 
 
 # ----------------------------------------------------------------- placement
@@ -284,10 +306,16 @@ def plan(text, video, width, height, fonts, brand_rgb, caption_template=None,
                 (HAIR_MIN, 1.0, True),
                 (HAIR_FULL, 1.0, False), (HAIR_MIN, 1.0, False),
                 (HAIR_MIN, 0.92, False), (HAIR_MIN, 0.85, False), (HAIR_MIN, 0.78, False)]
+    # At every step, the hook in three lines first (biggest text), then in two
+    # wider lines: shorter overall, so it fits above a head the three-line box
+    # does not -- better than shrinking it.
     for hair, scale, only_above in attempts:
         occupied = occupied_bands(seen, zoom_at, width, height, hair)
-        lay = layout(text, width, height, fonts, scale)
-        cy, where = choose_y(lay, occupied, height, band, only_above)
+        for ml in (MAX_LINES, 2):
+            lay = layout(text, width, height, fonts, scale, max_lines=ml)
+            cy, where = choose_y(lay, occupied, height, band, only_above)
+            if cy is not None:
+                break
         if cy is not None:
             if hair < HAIR_MEASURED:
                 where += ", over the top of the hair"

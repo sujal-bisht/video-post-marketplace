@@ -137,6 +137,12 @@ def main():
                                    ("min_quiet", 4.0), ("skip_head", 1.0)):
             if getattr(args, field) == getattr(defaults, field):
                 setattr(args, field, short_value)
+        # A very short clip cannot take even one 4-7s zoom: after a tight cut
+        # an 8-second video got one 6s zoom, 70% of it moving, and the verifier
+        # failed it as too busy. Under ~15s the zoom is held to half the clip.
+        if args.max_len == 7.0 and tl["duration"] < 15.0:
+            args.max_len = max(2.0, round(0.5 * (tl["duration"] - args.skip_head), 1))
+            args.min_len = min(args.min_len, max(1.5, args.max_len * 0.7))
         print("Short-form (%.0fs): zooms of %.0f-%.0fs, %.0fs apart, from %.0fs in."
               % (tl["duration"], args.min_len, args.max_len, args.min_quiet, args.skip_head))
 

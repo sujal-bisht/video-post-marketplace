@@ -271,24 +271,64 @@ def render_trimmed_video(source, keep_segments, out_path, audio_path, fps, width
             raise SystemExit("Rendering the trimmed video failed.")
 
 
-def _link_original(source, output_dir, basename):
-    """Put the original footage in the output folder without copying it, if possible.
+def _source_timecode(path):
+    """The start timecode a camera stamped into the file, or None."""
+    out = subprocess.run(["ffprobe", "-v", "error", "-show_entries",
+                          "format_tags=timecode:stream_tags=timecode", "-of", "json", path],
+                         capture_output=True, text=True).stdout
+    try:
+        d = json.loads(out)
+    except ValueError:
+        return None
+    for s in d.get("streams", []) + [d.get("format", {})]:
+        tc = (s.get("tags") or {}).get("timecode")
+        if tc:
+            return tc
+    return None
 
-    A hard link is a second name for the same file: instant, and no extra disk
-    space. It only works on the same drive; otherwise this falls back to a copy,
-    which is still far faster than re-encoding. Either way the folder stays
-    self-contained, which is what the editors need to find the media.
+
+def _link_original(source, output_dir, basename):
+    """Put the original footage in the output folder, the way editors can use it.
+
+    No timecode in the file: a hard link -- a second name for the same file,
+    instant, no extra disk space (a plain copy across drives).
+
+    A camera timecode in the file (DJI, Sony, most real cameras stamp the time
+    of day, e.g. 19:51:40): a copy WITHOUT the timecode, made by copying the
+    video and sound data as they are -- no re-encode, no quality change, a few
+    seconds. Linked as-is, Resolve showed the camera clips as Media Offline:
+    the timeline counts from frame 0, and Resolve went looking for frame 0 in a
+    file that starts at 19:51:40. Writing the timecode into the timeline
+    instead is fragile -- ffmpeg read that file as 19:51:40;02 and Resolve as
+    19:51:40;04 -- so the copy simply has none, exactly like the re-encoded
+    trimmed file that always imported cleanly.
     """
-    ext = os.path.splitext(source)[1] or ".mp4"
+    ext = os.path.splitext(source)[1].lower() or ".mp4"
     dest = os.path.join(output_dir, "%s_original%s" % (basename, ext))
     src = os.path.abspath(source)
     if os.path.exists(dest):
         try:
             if os.path.samefile(src, dest):
-                return dest
+                os.remove(dest)
         except OSError:
             pass
-        os.remove(dest)
+        if os.path.exists(dest):
+            os.remove(dest)
+    tc = _source_timecode(src)
+    if tc:
+        r = subprocess.run(["ffmpeg", "-y", "-v", "error", "-i", src,
+                            "-map", "0:v:0", "-map", "0:a?", "-c", "copy",
+                            "-map_metadata", "-1", "-map_chapters", "-1",
+                            "-write_tmcd", "0", "-movflags", "+faststart", dest])
+        if r.returncode == 0 and not _source_timecode(dest):
+            print("Original footage copied into the output folder as %s, without its camera "
+                  "timecode (%s), so editors line it up from frame 0. Not re-encoded."
+                  % (os.path.basename(dest), tc))
+            return dest
+        if os.path.exists(dest):
+            os.remove(dest)
+        print("note: could not strip the camera timecode (%s); linking the file as it is. "
+              "If an editor shows it as Media Offline, that is why." % tc)
     try:
         os.link(src, dest)
         how = "linked (no copy, no extra space)"

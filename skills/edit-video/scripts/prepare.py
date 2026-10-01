@@ -116,7 +116,8 @@ def main():
     t0 = time.time()
 
     sil = os.path.join(args.scratch, "cutlist_silence.json")
-    _run("Silence cuts", [_script("rough-cut", "plan_cuts.py"), args.transcript, sil])
+    _run("Silence cuts", [_script("rough-cut", "plan_cuts.py"), args.transcript, sil,
+                          "--media", args.video])
 
     speech = args.speech_cuts
     if not speech:

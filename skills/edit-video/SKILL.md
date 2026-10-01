@@ -360,3 +360,22 @@ the user needs a full-size file (a 4K YouTube upload), rerun finish with
     timeline sync check compared loudness levels, which compression reshapes
     on purpose: it could no longer tell aligned from 0.1 s off. It now compares
     when the sound rises and falls, and catches even a 2-frame (33 ms) shift.
+11. **The camera clips imported as Media Offline in Resolve.** Captions, hook
+    and sound came in; the picture did not. DJI (and most real cameras) stamp
+    the time of day into the file as its start timecode -- 19:51:40 -- and the
+    timeline counts from frame 0, so Resolve looked for frame 0 in a file that
+    starts at 19:51:40. The original is now copied into the folder without its
+    timecode (the data copied as is: no re-encode, frame-identical, seconds),
+    which Resolve reads as starting at 00:00:00:00.
+12. **Pauses full of breath and head-turns stayed in.** The silence cut only
+    takes what is under -45 dB; a breath or turning to read the script is
+    louder than that. Between-words pauses are now measured against the
+    recording's own speech level and cut down to 120 ms. Their edges come from
+    the sound, not the transcript: Whisper stamped the first word of every
+    phrase 0.3-0.45 s early, and cutting to its times left most of each pause.
+    On the DJI test: 1.36 s before the first word became 0.06 s; the longest
+    pause, 1.38 s, became 0.32 s; every word kept.
+13. **The hook looked small.** A fixed size with generous padding covered half
+    the frame width. It now grows until the box fills ~88% of the width in up
+    to three lines, hugs the words, and drops to two wider lines (shorter)
+    before it shrinks, when the space above the head is tight.
