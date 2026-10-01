@@ -16,8 +16,9 @@ HOW
 ---
 For sampled clips, take the audio the clip reads from at its in-point and the
 audio the rendered cut has at that timeline position, and compare their loudness
-contours. Same content, even through a different encode, scores 0.000; a shift
-of a tenth of a second already scores 0.27. Speech rhythm is sharply
+contours -- by when the sound rises and falls, not by how loud it is, so the
+sound polish cannot fool it. Same moment scores near 0; a shift of a tenth of a
+second scores above 0.5. Speech rhythm is sharply
 discriminating in a way pictures are not -- frame thumbnails were tried first
 and abandoned, because a talking head in front of a static background looks
 nearly identical two seconds apart (measured: 4.0 on a 0-255 scale, far too
@@ -41,11 +42,18 @@ _WINDOW = 0.6      # seconds of audio compared per sample
 _BINS = 32         # loudness bins across that window
 _OFFSET = 0.1      # seconds into the clip, to clear the boundary
 
-# Mean absolute difference between normalised loudness contours. Measured on
-# real footage: the same moment through two different encodes scores 0.000,
-# while a 0.1s shift scores 0.27 and larger shifts stay above 0.25. 0.12 sits in
-# the empty space between those two populations.
-MATCH_THRESHOLD = 0.12
+# 1 - the rank correlation between the two loudness contours: 0 means the
+# sound rises and falls at exactly the same moments.
+#
+# Ranks, not levels. The first version compared the contours' levels directly,
+# which was fine until the sound polish (compression and loudness) started
+# reshaping the level of the cut audio on purpose. Measured on a 6-minute
+# timeline, that comparison could no longer tell right from wrong: aligned
+# samples scored up to 0.178 and samples shifted by 0.1s as little as 0.185.
+# Compression keeps the ORDER of loud and quiet moments, and a shift destroys
+# it, so ranks separate cleanly: aligned at most 0.10 (polished) / 0.04 (raw),
+# shifted by 0.1s at least 0.58, by 0.25s at least 0.31. 0.2 sits in the gap.
+MATCH_THRESHOLD = 0.2
 
 
 def envelope(path, seconds, window=_WINDOW, bins=_BINS):
@@ -73,10 +81,27 @@ def envelope(path, seconds, window=_WINDOW, bins=_BINS):
     return [e / peak for e in env]
 
 
+def _ranks(values):
+    order = sorted(range(len(values)), key=lambda i: values[i])
+    ranks = [0.0] * len(values)
+    for r, i in enumerate(order):
+        ranks[i] = float(r)
+    return ranks
+
+
 def envelope_distance(a, b):
+    """1 - Spearman rank correlation of two contours (0 = identical shape)."""
     if a is None or b is None:
         return None
-    return sum(abs(x - y) for x, y in zip(a, b)) / float(len(a))
+    ra, rb = _ranks(a), _ranks(b)
+    n = float(len(ra))
+    ma, mb = sum(ra) / n, sum(rb) / n
+    cov = sum((x - ma) * (y - mb) for x, y in zip(ra, rb))
+    va = sum((x - ma) ** 2 for x in ra)
+    vb = sum((y - mb) ** 2 for y in rb)
+    if va <= 0 or vb <= 0:
+        return None
+    return 1.0 - cov / math.sqrt(va * vb)
 
 
 def path_from_pathurl(url):

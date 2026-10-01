@@ -11,7 +11,9 @@ Runs, in order, the machine steps of the edit:
      linked into the output folder -- no video is re-encoded here
   3. transcribes the cut audio (that transcript drives the zooms and captions)
   4. verifies the cut: dead air, the timeline's sync, leftover restarts
-  5. lays out the zoom candidates (skipped with --slides: zooms go after slides)
+  5. polishes the sound: rumble cut, noise reduced only if the room needs it,
+     gentle compression, -14 LUFS (lib/audio_polish.py)
+  6. lays out the zoom candidates (skipped with --slides: zooms go after slides)
 
 and prints what the model has to decide next: any leftover repeats to judge,
 and the zoom candidates to choose from. Then finish.py --zooms renders.
@@ -67,6 +69,31 @@ def _run(label, argv, show=True, ok_codes=(0,)):
     return r
 
 
+def _polish(video, raw_transcript, wav):
+    """Polish the cut audio in place; the timeline and the final both play it."""
+    sys.path.insert(0, str(HERE.parents[2] / "lib"))
+    sys.path.insert(0, str(HERE))
+    import audio_polish as A
+    t = time.time()
+    silences = json.load(open(raw_transcript, encoding="utf-8")).get("audio_silences")
+    room = A.room_noise_db(os.path.abspath(video), silences)
+    r = A.polish(wav, wav, room_db=room)
+    print("== Polishing the sound (%.0fs)" % (time.time() - t))
+    nr = r["noise_reduction_db"]
+    note = ("noise reduced by %.0f dB (room at %.0f dB, would have been %.0f dB after the lift)"
+            % (nr, r["room_noise_db"], r["noise_after_lift_db"]) if nr else
+            "no noise reduction needed (room at %s dB)" % r["room_noise_db"])
+    summary = ("%.1f -> %.1f LUFS, peak %.1f dBTP; %s; timing %s"
+               % (r["before_lufs"], r["after_lufs"], r["after_true_peak"], note,
+                  "exact" if abs(r["offset_samples"]) < 240 else
+                  "OFF BY %d SAMPLES" % r["offset_samples"]))
+    print(summary + "\n")
+    if abs(r["offset_samples"]) >= 240:
+        raise SystemExit("The polished sound is out of step with the picture. Re-run with "
+                         "--no-audio-polish and report this.")
+    return summary
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("video", help="The raw video.")
@@ -76,6 +103,8 @@ def main():
     ap.add_argument("--out", required=True, help="Output folder for the deliverables.")
     ap.add_argument("--scratch", required=True, help="Working folder, outside the user's folders.")
     ap.add_argument("--name", help="Base name for the outputs; defaults to the video's name.")
+    ap.add_argument("--no-audio-polish", action="store_true",
+                    help="Leave the sound exactly as recorded. Only when the user asks.")
     ap.add_argument("--slides", action="store_true",
                     help="Slides will be added: also render the trimmed copy the cutout needs, "
                          "and leave the zooms until after the slides.")
@@ -111,6 +140,10 @@ def main():
                                        "--original", args.video, "--xml", xml,
                                        "--check-transcript", cut_t], ok_codes=(0, 1))
 
+    polished = None
+    if not args.no_audio_polish and verify.returncode == 0:
+        polished = _polish(args.video, args.transcript, wav)
+
     cands = os.path.join(args.scratch, "zoom_candidates.json")
     if not args.slides:
         _run("Zoom candidates", [_script("slow-zoom", "plan_zooms.py"), xml, cut_t, cands])
@@ -119,6 +152,8 @@ def main():
     print("Prepared in %.0fs." % (time.time() - t0))
     print("  timeline:          %s" % xml)
     print("  cut transcript:    %s   (for the zooms and the captions)" % cut_t)
+    if polished:
+        print("  sound:             %s" % polished)
     if verify.returncode != 0:
         print("\nTHE CUT FAILED ITS CHECK -- see 'Checking the cut' above. Fix it (usually a "
               "speech cut that left a gap) and run prepare again before anything else.")

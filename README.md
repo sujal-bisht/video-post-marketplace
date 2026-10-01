@@ -8,6 +8,8 @@ a caption style, and for vertical video the hook line — then does the rest on
 its own:
 
 - **cuts** the dead air, filler words, false starts and botched takes
+- **cleans up the sound**: rumble and background hiss removed when needed, volume
+  evened out, set to the loudness Instagram, TikTok and YouTube play at
 - **slow zooms** on the lines that carry weight
 - **captions** in your brand font and colour
 - **a hook line** on screen for the first seconds of short-form video, placed

@@ -3,8 +3,9 @@ name: edit-video
 description: >
   The front door for editing talking-head video: raw footage in, a finished,
   captioned, post-ready video out, plus an editable Premiere/Resolve timeline.
-  By default it cuts the dead air and fumbled takes, adds slow zooms, puts on
-  captions in the user's own brand font and colour, and on vertical video adds
+  By default it cuts the dead air and fumbled takes, cleans up the sound and
+  sets it to platform loudness, adds slow zooms, puts on captions in the
+  user's own brand font and colour, and on vertical video adds
   a hook line for the first seconds. It asks every question first -- brand,
   caption style, hook -- showing each choice on the user's own video, then
   does everything else without asking. Runs
@@ -45,6 +46,7 @@ the tool while it works.
 | Rough cut | **on** | the user says not to cut |
 | Slow zoom | **on** | the user says no zooms |
 | Captions | **on** | the user says no captions |
+| Sound polish | **on** | the user wants the sound exactly as recorded: `prepare.py --no-audio-polish` |
 | Hook (context line) | **on for vertical video** | the user says no hook. Horizontal: off unless the user asks |
 | Slides and cutout | **off** | -- run it ONLY when the user asks for it AND hands over the slides |
 
@@ -226,8 +228,16 @@ python scripts/prepare.py <their video> --transcript <scratch>/<name>_transcript
 ```
 
 It plans the silence cuts, builds the timeline and the cut audio, transcribes
-the cut, verifies it (dead air, timeline sync, leftover restarts), and prints
-the zoom candidates with what is being said in each. **It does not re-encode
+the cut, verifies it (dead air, timeline sync, leftover restarts), polishes the
+sound, and prints the zoom candidates with what is being said in each.
+
+**The sound polish decides for itself** (`lib/audio_polish.py`): rumble below
+80 Hz removed; noise reduced only when the room noise -- measured in the raw
+recording's own pauses -- would be audible once the level is lifted, and then
+only moderately, because an over-cleaned voice sounds robotic; gentle
+compression; -14 LUFS, the level Instagram, TikTok and YouTube play at. It
+prints what it did. Report that line in the handover, in plain words: "sound
+cleaned up and set to platform loudness" or "background hiss reduced". **It does not re-encode
 the video**: the original is linked into the output folder and both the
 timeline and the final read it directly. That one change removed the slowest
 step of the whole edit.
@@ -323,3 +333,8 @@ rendering 4K for them is time thrown away. If the user needs a full-size file
    perfectly regular clock, which phone footage is not, so scaling before the
    cut put the picture a frame early. The cut always runs first, on the
    camera's own timestamps; checked frame by frame against the original.
+10. **Two checks that the sound polish broke.** The noise reducer delays the
+    sound by ~25 ms; it is measured and taken out, to the sample. And the
+    timeline sync check compared loudness levels, which compression reshapes
+    on purpose: it could no longer tell aligned from 0.1 s off. It now compares
+    when the sound rises and falls, and catches even a 2-frame (33 ms) shift.
