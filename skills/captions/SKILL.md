@@ -39,7 +39,11 @@ python ../edit-video/scripts/brand.py template emphasis
 ```
 
 The same rules hold: a font that cannot be found, or that cannot draw every
-letter, stops and goes back to the user. Never substitute silently.
+letter, stops and goes back to the user. Never substitute silently. And the
+style question always comes with the picture: put the preview still in front
+of the user in the conversation (in the Claude desktop app, `SendUserFile`
+with `display: "render"`) before asking "1, 2, 3 or 4?". Never ask with the
+names alone.
 
 ### 2. Transcribe
 

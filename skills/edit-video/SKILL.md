@@ -6,7 +6,8 @@ description: >
   By default it cuts the dead air and fumbled takes, adds slow zooms, puts on
   captions in the user's own brand font and colour, and on vertical video adds
   a hook line for the first seconds. It asks every question first -- brand,
-  caption style, hook -- then does everything else without asking. Runs
+  caption style, hook -- showing each choice on the user's own video, then
+  does everything else without asking. Runs
   locally; footage never leaves the machine. Use for ANY request to edit,
   post-produce, trim, tighten, clean up, caption, or "make ready to post" a
   video of someone talking -- Reels, TikToks, Shorts, course lessons, podcast
@@ -30,6 +31,12 @@ Why all of it up front: the edit takes minutes, and people walk away while it
 runs. A question asked halfway through sits unanswered until they come back,
 and the work stops with it. An approval queue in the middle of an edit is the
 failure this plugin exists to remove.
+
+**And every choice is shown, not described.** The caption styles are a picture
+of their own video in their brand; the chosen hook comes back as a picture of
+their video opening with it. Those pictures are also the first results they
+get -- seconds in, before the long wait -- and that is what keeps them with
+the tool while it works.
 
 ## What runs by default
 
@@ -116,19 +123,33 @@ the user. The three cases:
 
 If they don't know their hex code, pick a clean one, say which, and move on.
 
-### 1b. The caption style
+### 1b. The caption style -- shown, not described
 
-Show all four templates on **their own video, in their brand**:
+**Nobody can choose a caption style from its name.** "Spotlight or Emphasis?"
+means nothing until they see it. So the question always comes with the
+picture: all four templates, on **their own video, in their brand**.
 
 ```bash
 python scripts/preview_templates.py <their video> --language de
 ```
 
-This opens a still of all four side by side and a short moving clip, because
-the templates differ most in rhythm. It takes seconds -- nothing is transcribed
-yet. Use `--language de` for German footage so the sample reads naturally.
+It takes seconds (nothing is transcribed) and writes two files to
+`~/.video-post/previews/`: a still with all four side by side, numbered 1-4,
+and a short moving clip, because the templates differ most in rhythm. Use
+`--language de` for German footage so the sample reads naturally.
 
-Then ask: *"Which of these four do you want?"*
+**Put the still in front of the user, in the conversation, before asking.**
+
+- If this session has a tool for showing the user a file (in the Claude
+  desktop app, `SendUserFile` with `display: "render"`), send the still with
+  it, and attach the moving clip the same way.
+- Otherwise the script has already opened both on their screen. Say so in one
+  line, and give the two paths so they can open them again.
+- Never ask with only the four names, and never put up a multiple-choice
+  picker before the picture is there. The picture is the question.
+
+Then ask: *"Which of the four do you want -- 1, 2, 3 or 4?"* The numbers are
+printed on the picture.
 
 | | Template | What it does |
 |---|---|---|
@@ -141,7 +162,9 @@ Then ask: *"Which of these four do you want?"*
 python scripts/brand.py template badge
 ```
 
-The choice is saved. Next time, confirm it in the same breath as the brand.
+The choice is saved. Next time, show the picture again anyway and ask "same
+style -- Badge -- or a different one?" in the same message as the brand
+check. It costs seconds, and it is the first thing they get to look at.
 
 ### 1c. The hook -- vertical video only
 
@@ -158,6 +181,26 @@ words. Ask it in the same message as the caption style when the transcript is
 ready by then, so it is one round of questions, not two.
 
 Whatever they choose goes in exactly as they wrote or picked it.
+
+### 1d. Show them their hook, then go
+
+As soon as the hook is chosen, render it on their video:
+
+```bash
+python scripts/preview_hook.py <their video> --hook "<the hook they chose>" \
+    --transcript <scratch>/<name>_transcript.json
+```
+
+One still, in seconds: the opening of their video with the hook exactly where
+the final will put it, and their chosen caption style running underneath, with
+their real words. Show it the same way as the caption picture, with one line:
+*"This is how your video opens. Starting the edit now -- say stop if you want
+anything changed."*
+
+Then start, without waiting for an answer. This is not a fourth question; it
+is the first result. The edit runs for minutes with nothing to look at, and
+that silence is where people give up on a tool. They should go into the wait
+having already seen their video, in their brand, looking finished.
 
 **Now stop asking, and start working.**
 

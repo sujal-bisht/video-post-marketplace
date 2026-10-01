@@ -248,8 +248,12 @@ def standalone_ass(width, height, event_lines):
 
 
 def plan(text, video, width, height, fonts, brand_rgb, caption_template=None,
-         zoom_at=lambda t: 100.0, start=0.0, end=HOOK_SECONDS):
+         zoom_at=lambda t: 100.0, start=0.0, end=HOOK_SECONDS, draw_span=None):
     """Lay out and place the hook. Returns (event_lines, report dict).
+
+    Faces are looked for between `start` and `end` of `video`. The events are
+    timed over that same span unless `draw_span` (start, end) says otherwise --
+    a preview looks at the raw video's opening but draws onto a clip from 0.
 
     Faces are found on a small copy of each frame, which is all the detector
     needs, then scaled back to timeline coordinates.
@@ -294,7 +298,8 @@ def plan(text, video, width, height, fonts, brand_rgb, caption_template=None,
     report = {"lines": lay.lines, "y_share": round(cy / height, 3), "where": where,
               "scale": scale, "faces_found": sum(1 for b in seen.values() if b),
               "frames_checked": len(seen), "clash": clash}
-    return events(lay, width, cy, fonts, brand_rgb, start, end), report
+    s0, s1 = draw_span or (start, end)
+    return events(lay, width, cy, fonts, brand_rgb, s0, s1), report
 
 
 def caption_band(template, width, height):

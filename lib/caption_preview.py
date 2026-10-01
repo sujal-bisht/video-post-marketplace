@@ -133,3 +133,61 @@ def open_file(path):
             subprocess.Popen(["xdg-open", path])
     except Exception:
         pass
+
+
+def render_hook_preview(video, hook, fonts, brand_rgb, template, out_png, words=None,
+                        start=0.0, language="en"):
+    """One still of the hook on the user's own video, placed exactly as the
+    final will place it, with their caption style running underneath.
+
+    Shown right after the hook is chosen, before the long work starts: the
+    first real result of the edit, in seconds. Returns the placement report.
+
+    `words` are transcript words of the RAW video; the preview looks at the
+    4.5 seconds from `start` (normally the first spoken word), because that is
+    what the opening of the cut will be. Without words a sample sentence is
+    used for the caption.
+    """
+    import context_line as H
+    vw, vh, dur = _probe(video)
+    scale = 1080.0 / min(vw, vh)
+    pw, ph = int(round(vw * scale / 2)) * 2, int(round(vh * scale / 2)) * 2
+    start = max(0.0, min(start, max(0.0, dur - 1.0)))
+    end = min(dur, start + H.HOOK_SECONDS)
+
+    events, report = H.plan(hook, video, pw, ph, fonts, brand_rgb, caption_template=template,
+                            start=start, end=end, draw_span=(0.0, end - start))
+    if words:
+        spoken = [dict(w, start=w["start"] - start, end=w["end"] - start) for w in words
+                  if "start" in w and "end" in w and start <= w["start"] < end]
+    else:
+        spoken = []
+    if not spoken:
+        spoken = _sample_words(SAMPLE.get(language, SAMPLE["en"]))
+    # Show the moment a caption is on screen, as close to 1.5s in as possible.
+    at = 1.5
+    on = [w for w in spoken if w["start"] <= at <= w["end"] + 0.3]
+    if not on:
+        at = min(spoken, key=lambda w: abs(w["start"] - 1.5))["start"] + 0.05
+
+    work = tempfile.mkdtemp(prefix="vp-hookpreview-")
+    try:
+        os.makedirs(os.path.join(work, "fonts"))
+        for p in fonts.files.values():
+            shutil.copy(p, os.path.join(work, "fonts"))
+        ass = C.build_ass(spoken, template, pw, ph, brand_rgb, (255, 255, 255), fonts)
+        with open(os.path.join(work, "hook.ass"), "w", encoding="utf-8") as f:
+            f.write(ass.rstrip("\n") + "\n" + "\n".join(events) + "\n")
+        subprocess.run(["ffmpeg", "-y", "-v", "error", "-i", os.path.abspath(video),
+                        "-ss", "%.3f" % (start + at), "-frames:v", "1",
+                        "-vf", "scale=%d:%d" % (pw, ph), "still.png"], cwd=work, check=True)
+        # Drawn straight to PNG, never through a video codec -- see render_previews.
+        subprocess.run(["ffmpeg", "-y", "-v", "error", "-loop", "1", "-i", "still.png",
+                        "-t", "%.2f" % (at + 1.0),
+                        "-vf", "subtitles=hook.ass:fontsdir=fonts,scale=%d:%d:flags=lanczos"
+                               % (pw * 2 // 3 // 2 * 2, ph * 2 // 3 // 2 * 2),
+                        "-ss", "%.3f" % at, "-frames:v", "1", os.path.abspath(out_png)],
+                       cwd=work, check=True)
+    finally:
+        shutil.rmtree(work, ignore_errors=True)
+    return report
